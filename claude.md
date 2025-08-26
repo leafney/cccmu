@@ -27,7 +27,6 @@
 cccmu/
 ├── server/                 # 后端Go代码
 │   ├── main.go            # 程序入口
-│   ├── config/            # 配置管理
 │   ├── database/          # 数据库操作
 │   ├── handlers/          # HTTP处理器
 │   ├── services/          # 业务逻辑
@@ -107,10 +106,10 @@ func GetUsageData() (*UsageData, error) {
 - **变量/函数**: 小驼峰命名 (`usageData`, `fetchData`)
 - **类型接口**: 大驼峰命名，以I开头 (`IUsageData`, `IConfig`)
 
-#### 组件结构
+#### React 组件规范 (函数组件)
 ```tsx
-// 组件模板
-import React from 'react';
+// 使用最新的函数组件写法，优先使用 hooks
+import React, { useState, useEffect, useMemo } from 'react';
 import { IUsageData } from '../types';
 
 interface UsageChartProps {
@@ -118,16 +117,22 @@ interface UsageChartProps {
   className?: string;
 }
 
-export const UsageChart: React.FC<UsageChartProps> = ({ 
-  data, 
-  className = '' 
-}) => {
+// 推荐：直接函数定义，无需 React.FC
+export function UsageChart({ data, className = '' }: UsageChartProps) {
+  // 使用 hooks 管理状态
+  const [loading, setLoading] = useState(false);
+  
+  // 使用 useMemo 优化计算
+  const processedData = useMemo(() => {
+    return data.filter(item => item.creditsUsed > 0);
+  }, [data]);
+  
   return (
     <div className={`usage-chart ${className}`}>
       {/* 组件内容 */}
     </div>
   );
-};
+}
 ```
 
 ---
@@ -187,12 +192,22 @@ type UsageData struct {
     Model       string    `json:"model"`
 }
 
-// 用户配置
+// 用户配置（不使用配置文件，代码中设置默认值）
 type UserConfig struct {
-    Cookie      string `json:"cookie"`
-    Interval    int    `json:"interval"`    // 刷新间隔(分钟)
-    TimeRange   int    `json:"timeRange"`   // 时间范围(小时)
-    Enabled     bool   `json:"enabled"`     // 任务启用状态
+    Cookie      string `json:"cookie"`      // 默认为空，用户前端设置
+    Interval    int    `json:"interval"`    // 默认1分钟
+    TimeRange   int    `json:"timeRange"`   // 默认1小时
+    Enabled     bool   `json:"enabled"`     // 默认false
+}
+
+// 默认配置
+func GetDefaultConfig() *UserConfig {
+    return &UserConfig{
+        Cookie:    "",
+        Interval:  1,    // 1分钟
+        TimeRange: 1,    // 1小时
+        Enabled:   false, // 默认关闭
+    }
 }
 ```
 
@@ -266,6 +281,8 @@ log.Error("Cookie验证失败",
 - BadgerDB读写操作异步处理
 - SSE连接数量限制和清理
 - 定时任务合理的时间间隔设置
+- 无配置文件设计，所有配置项硬编码默认值
+- 配置项通过前端界面动态修改并持久化到数据库
 
 ### 前端优化
 - ECharts图表数据虚拟化（大数据量时）
@@ -313,13 +330,15 @@ func TestGetUsageData(t *testing.T) {
 - 数据库操作测试
 - 定时任务测试
 
-### 前端测试
+### 前端测试 (函数组件)
 ```tsx
-// React 组件测试
+// React 函数组件测试
 import { render, screen } from '@testing-library/react';
 import { UsageChart } from './UsageChart';
 
 test('renders usage chart', () => {
+    const mockData = [/* 测试数据 */];
+    render(<UsageChart data={mockData} />);
     // 测试逻辑
 });
 ```
