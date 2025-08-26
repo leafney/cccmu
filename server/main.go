@@ -88,14 +88,14 @@ func main() {
 		})
 	} else {
 		// 生产环境：直接使用文件系统静态文件
-		app.Static("/", "../web/dist", fiber.Static{
+		app.Static("/", "./web/dist", fiber.Static{
 			Index:  "index.html",
 			Browse: false,
 		})
 
 		// SPA路由处理
 		app.Use(func(c *fiber.Ctx) error {
-			return c.SendFile("../web/dist/index.html")
+			return c.SendFile("./web/dist/index.html")
 		})
 	}
 
