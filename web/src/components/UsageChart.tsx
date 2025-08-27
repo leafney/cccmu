@@ -12,7 +12,8 @@ export function UsageChart({ data, className = '' }: UsageChartProps) {
     if (!data || data.length === 0) {
       return {
         times: [],
-        series: {}
+        series: {},
+        dataMap: {}
       };
     }
 
@@ -29,9 +30,12 @@ export function UsageChart({ data, className = '' }: UsageChartProps) {
 
     // 生成时间轴
     const timeSet = new Set<string>();
+    const dataMap: { [key: string]: IUsageData } = {};
     Object.values(groupedData).forEach(items => {
       items.forEach(item => {
-        timeSet.add(new Date(item.createdAt).toISOString());
+        const timeKey = new Date(item.createdAt).toISOString();
+        timeSet.add(timeKey);
+        dataMap[`${timeKey}_${item.model}`] = item;
       });
     });
     
@@ -48,7 +52,7 @@ export function UsageChart({ data, className = '' }: UsageChartProps) {
       });
     });
 
-    return { times, series };
+    return { times, series, dataMap };
   }, [data]);
 
   const option = useMemo(() => ({
@@ -64,30 +68,81 @@ export function UsageChart({ data, className = '' }: UsageChartProps) {
     },
     tooltip: {
       trigger: 'axis',
-      backgroundColor: 'rgba(0, 0, 0, 0.8)',
-      borderColor: 'rgba(255, 255, 255, 0.2)',
+      backgroundColor: 'rgba(0, 0, 0, 0.88)',
+      borderColor: 'rgba(251, 191, 36, 0.4)',
+      borderWidth: 1,
+      borderRadius: 6,
+      padding: [8, 12],
       textStyle: {
         color: '#ffffff'
       },
+      extraCssText: 'box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);',
       formatter: (params: any[]) => {
-        // 格式化时间显示，显示完整的日期和时间
-        const date = new Date(params[0].name);
-        const formattedTime = date.toLocaleString('zh-CN', {
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: false
+        if (!params || params.length === 0) return '';
+        
+        // 从x轴数据获取时间
+        const timeKey = params[0].name;
+        const date = new Date(timeKey);
+        
+        // 验证日期是否有效
+        let formattedTime = '';
+        if (!isNaN(date.getTime())) {
+          formattedTime = date.toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+          });
+        } else {
+          // 如果从x轴获取的时间无效，尝试从原始数据获取
+          const firstParam = params.find(p => p.value > 0);
+          if (firstParam) {
+            const dataKey = `${timeKey}_${firstParam.seriesName}`;
+            const originalData = chartData.dataMap[dataKey];
+            if (originalData && originalData.createdAt) {
+              const originalDate = new Date(originalData.createdAt);
+              if (!isNaN(originalDate.getTime())) {
+                formattedTime = originalDate.toLocaleString('zh-CN', {
+                  year: 'numeric',
+                  month: '2-digit',
+                  day: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                  hour12: false
+                });
+              }
+            }
+          }
+        }
+        
+        // 如果还是无法获取有效时间，使用当前时间作为fallback
+        if (!formattedTime) {
+          formattedTime = '时间格式错误';
+        }
+        
+        // 简化的时间显示
+        let tooltip = `<div style="margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid rgba(251, 191, 36, 0.3);">
+          <div style="font-weight: 600; color: #ffffff; font-size: 13px;">${formattedTime}</div>
+        </div>`;
+        
+        // 添加积分信息
+        const validParams = params.filter(param => param.value > 0);
+        validParams.forEach((param) => {
+          tooltip += `<div style="margin: 6px 0; padding: 4px 0;">
+            <div style="display: flex; align-items: center; margin-bottom: 3px;">
+              <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background-color: ${param.color}; margin-right: 8px;"></span>
+              <span style="color: #ffffff; font-size: 12px;">${param.seriesName}</span>
+            </div>
+            <div style="margin-left: 14px;">
+              <span style="font-weight: 600; color: #fbbf24; font-size: 13px;">${param.value} credits</span>
+            </div>
+          </div>`;
         });
         
-        let tooltip = `<div style="margin-bottom: 8px; font-weight: bold; color: #fbbf24;">${formattedTime}</div>`;
-        params.forEach(param => {
-          if (param.value > 0) {
-            tooltip += `<div style="margin: 4px 0;">${param.marker}<span style="margin-right: 8px;">${param.seriesName}</span><span style="font-weight: bold; color: #fbbf24;">${param.value} credits</span></div>`;
-          }
-        });
         return tooltip;
       }
     },
@@ -107,11 +162,21 @@ export function UsageChart({ data, className = '' }: UsageChartProps) {
     },
     xAxis: {
       type: 'category',
-      data: chartData.times.map(time => new Date(time).toLocaleTimeString()),
-      axisLabel: {
+      data: chartData.times.map(time => time), // 保持原始ISO时间戳用于tooltip
+       axisLabel: {
         rotate: 45,
         fontSize: 12,
-        color: '#ffffff'
+        color: '#ffffff',
+        formatter: (value: string) => {
+          // 在x轴显示时格式化为简短时间
+          const date = new Date(value);
+          return !isNaN(date.getTime()) ? date.toLocaleTimeString('zh-CN', { 
+            hour12: false,
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          }) : '时间错误';
+        }
       },
       axisLine: {
         lineStyle: {
