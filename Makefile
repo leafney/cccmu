@@ -45,6 +45,9 @@ build-frontend:
 
 .PHONY: build-backend
 build-backend: build-frontend
+	@echo "准备embed静态文件..."
+	@rm -rf $(BACKEND_DIR)/web/dist
+	@cp -r $(FRONTEND_DIR)/dist $(BACKEND_DIR)/web/
 	@echo "编译后端二进制文件..."
 	cd $(BACKEND_DIR) && go mod tidy && go build -ldflags="-s -w" -o ../$(BINARY_NAME) main.go
 
@@ -57,6 +60,7 @@ build: build-backend
 clean:
 	@echo "清理构建文件..."
 	@rm -rf $(FRONTEND_DIR)/dist
+	@rm -rf $(BACKEND_DIR)/web/dist
 	@rm -f $(BINARY_NAME)
 	@rm -rf $(BUILD_DIR)
 	@echo "清理完成"

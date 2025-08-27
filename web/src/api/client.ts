@@ -65,15 +65,13 @@ class APIClient {
   ): EventSource {
     const eventSource = new EventSource(`${API_BASE}/usage/stream?minutes=${timeRange}`);
     
-    eventSource.addEventListener('connected', (event) => {
-      console.log('SSE连接已确认:', event.data);
+    eventSource.addEventListener('connected', () => {
+      // 连接确认事件
     });
 
     eventSource.addEventListener('usage', (event) => {
       try {
-        console.log('收到SSE usage事件:', event.data);
         const data = JSON.parse(event.data);
-        console.log('解析后的数据:', data);
         onMessage(data);
       } catch (error) {
         console.error('解析SSE数据失败:', error, event.data);
@@ -93,15 +91,14 @@ class APIClient {
     };
 
     eventSource.onopen = () => {
-      console.log('SSE连接已建立 - onopen事件');
       if (onOpen) {
         onOpen();
       }
     };
     
     // 添加连接状态监听
-    eventSource.onmessage = (event) => {
-      console.log('SSE收到默认消息:', event);
+    eventSource.onmessage = () => {
+      // 默认消息处理
     };
 
     return eventSource;

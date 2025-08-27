@@ -17,8 +17,6 @@ export function Dashboard() {
 
   // 建立SSE连接
   const connectSSE = useCallback(() => {
-    console.log('开始建立SSE连接...');
-    
     // 清理现有的重试计时器
     if (retryTimeoutRef.current) {
       clearTimeout(retryTimeoutRef.current);
@@ -28,7 +26,6 @@ export function Dashboard() {
     // 关闭现有连接
     setEventSource(prev => {
       if (prev) {
-        console.log('关闭现有SSE连接');
         prev.close();
         setIsConnected(false); // 关闭连接时重置状态
       }
@@ -36,11 +33,9 @@ export function Dashboard() {
     });
 
     const timeRange = config?.timeRange || 1;
-    console.log(`创建SSE连接，时间范围: ${timeRange}小时`);
     
     const newEventSource = apiClient.createSSEConnection(
       (data: IUsageData[]) => {
-        console.log('SSE接收到数据，设置连接状态为已连接');
         setUsageData(data);
         setLastUpdate(new Date());
         // 收到数据时确保连接状态为已连接
@@ -51,13 +46,11 @@ export function Dashboard() {
         setIsConnected(false);
         // 5秒后重试连接
         retryTimeoutRef.current = setTimeout(() => {
-          console.log('SSE连接错误，5秒后重试');
           connectSSE();
         }, 5000);
       },
       () => {
         // SSE连接成功时设置连接状态
-        console.log('SSE连接建立成功，设置连接状态为已连接');
         setIsConnected(true);
       },
       timeRange
@@ -93,7 +86,6 @@ export function Dashboard() {
   // 配置更新后重新连接SSE - 只在timeRange变化时重连
   useEffect(() => {
     if (config) {
-      console.log('配置已加载，建立SSE连接');
       connectSSE();
     }
 
@@ -105,7 +97,6 @@ export function Dashboard() {
       }
       // 关闭SSE连接
       if (eventSource) {
-        console.log('组件卸载，关闭SSE连接');
         eventSource.close();
         setIsConnected(false);
       }

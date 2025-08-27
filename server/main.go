@@ -1,27 +1,27 @@
 package main
 
 import (
+	"io/fs"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/filesystem"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 
 	"github.com/leafney/cccmu/server/database"
 	"github.com/leafney/cccmu/server/handlers"
 	"github.com/leafney/cccmu/server/services"
+	"github.com/leafney/cccmu/server/web"
 )
-
-// 注释掉embed，在开发阶段先不使用
-// //go:embed all:../web/dist
-// var embedDirStatic embed.FS
 
 func main() {
 	// 初始化数据库
-	db, err := database.NewBadgerDB("./badger")
+	db, err := database.NewBadgerDB("./.b")
 	if err != nil {
 		log.Fatalf("初始化数据库失败: %v", err)
 	}
@@ -80,24 +80,46 @@ func main() {
 		api.Get("/usage/data", sseHandler.GetUsageData)
 	}
 
-	// 静态文件服务（开发环境）
-	if isDevelopment() {
-		log.Println("开发模式：使用代理到前端开发服务器")
-		app.All("/*", func(c *fiber.Ctx) error {
-			return c.Redirect("http://localhost:3000" + c.OriginalURL())
-		})
-	} else {
-		// 生产环境：直接使用文件系统静态文件
-		app.Static("/", "./web/dist", fiber.Static{
-			Index:  "index.html",
-			Browse: false,
-		})
+	// 静态文件服务 - 使用embed嵌入的静态文件
+	log.Println("使用embed嵌入的静态文件")
 
-		// SPA路由处理
-		app.Use(func(c *fiber.Ctx) error {
-			return c.SendFile("./web/dist/index.html")
-		})
+	// 获取embed文件系统的子目录
+	staticFS, err := fs.Sub(web.StaticFiles, "dist")
+	if err != nil {
+		log.Fatalf("获取embed静态文件系统失败: %v", err)
 	}
+
+	// 使用filesystem中间件服务静态文件
+	app.Use("/", filesystem.New(filesystem.Config{
+		Root:   http.FS(staticFS),
+		Browse: false,
+		Index:  "index.html",
+	}))
+
+	// SPA路由处理 - 对于所有未匹配的路由，返回index.html
+	app.Use(func(c *fiber.Ctx) error {
+		// 如果是API路由，直接返回404
+		if len(c.Path()) >= 4 && c.Path()[:4] == "/api" {
+			return c.Status(404).JSON(fiber.Map{
+				"code":    404,
+				"message": "API endpoint not found",
+			})
+		}
+
+		// 尝试读取index.html
+		indexFile, err := staticFS.Open("index.html")
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"code":    500,
+				"message": "Failed to read index.html",
+			})
+		}
+		defer indexFile.Close()
+
+		// 设置正确的Content-Type
+		c.Set("Content-Type", "text/html; charset=utf-8")
+		return c.SendStream(indexFile)
+	})
 
 	// 启动服务器
 	port := getPort()
@@ -121,11 +143,6 @@ func main() {
 		log.Printf("服务器关闭失败: %v", err)
 	}
 	log.Println("服务器已关闭")
-}
-
-// isDevelopment 检查是否为开发环境
-func isDevelopment() bool {
-	return os.Getenv("ENV") == "development"
 }
 
 // getPort 获取端口

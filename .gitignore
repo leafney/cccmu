@@ -29,6 +29,7 @@ Thumbs.db
 # Frontend
 web/node_modules/
 web/dist/
+server/web/dist/
 web/.env
 web/.env.local
 web/.env.development.local
@@ -39,7 +40,7 @@ web/.env.production.local
 *.db
 data/
 badger/
-
+.b/
 # Logs
 *.log
 logs/
