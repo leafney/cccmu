@@ -77,13 +77,16 @@ func (s *SchedulerService) Start() error {
 	}
 
 	// 添加定时任务
-	_, err = s.scheduler.NewJob(
+	job, err := s.scheduler.NewJob(
 		gocron.DurationJob(time.Duration(s.config.Interval)*time.Minute),
 		gocron.NewTask(s.fetchAndSaveData),
+		gocron.WithSingletonMode(gocron.LimitModeReschedule),
 	)
 	if err != nil {
 		return fmt.Errorf("创建定时任务失败: %w", err)
 	}
+	
+	log.Printf("定时任务创建成功，任务ID: %v，间隔: %d分钟", job.ID(), s.config.Interval)
 
 	// 启动调度器
 	s.scheduler.Start()
@@ -91,8 +94,11 @@ func (s *SchedulerService) Start() error {
 
 	log.Printf("定时任务已启动，间隔: %d分钟", s.config.Interval)
 
-	// 立即执行一次
-	go s.fetchAndSaveData()
+	// 立即执行一次，确保在所有监听器建立后执行
+	go func() {
+		time.Sleep(100 * time.Millisecond) // 短暂延迟，确保SSE连接已建立
+		s.fetchAndSaveData()
+	}()
 
 	return nil
 }
@@ -172,18 +178,28 @@ func (s *SchedulerService) startWithoutLock() error {
 	s.scheduler = scheduler
 
 	// 添加定时任务
-	_, err = s.scheduler.NewJob(
+	job, err := s.scheduler.NewJob(
 		gocron.DurationJob(time.Duration(s.config.Interval)*time.Minute),
 		gocron.NewTask(s.fetchAndSaveData),
+		gocron.WithSingletonMode(gocron.LimitModeReschedule),
 	)
 	if err != nil {
 		return fmt.Errorf("创建定时任务失败: %w", err)
 	}
+	
+	log.Printf("定时任务重建成功，任务ID: %v，间隔: %d分钟", job.ID(), s.config.Interval)
 
 	s.scheduler.Start()
 	s.isRunning = true
 
 	log.Printf("定时任务已重启，间隔: %d分钟", s.config.Interval)
+	
+	// 立即执行一次
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		s.fetchAndSaveData()
+	}()
+	
 	return nil
 }
 
@@ -201,7 +217,7 @@ func (s *SchedulerService) FetchDataManually() error {
 
 // fetchAndSaveData 获取并保存数据
 func (s *SchedulerService) fetchAndSaveData() error {
-	log.Println("开始获取积分使用数据...")
+	log.Printf("定时任务触发: 开始获取积分使用数据... (当前监听器数量: %d)", len(s.listeners))
 
 	data, err := s.apiClient.FetchUsageData()
 	if err != nil {
@@ -222,9 +238,12 @@ func (s *SchedulerService) fetchAndSaveData() error {
 	// 更新最新数据并通知监听器
 	s.mu.Lock()
 	s.lastData = data
+	currentListeners := len(s.listeners)
 	s.mu.Unlock()
 
+	log.Printf("开始通知 %d 个监听器", currentListeners)
 	s.notifyListeners(data)
+	log.Printf("数据推送完成")
 
 	return nil
 }
@@ -265,13 +284,18 @@ func (s *SchedulerService) notifyListeners(data []models.UsageData) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	for _, listener := range s.listeners {
+	log.Printf("开始向 %d 个监听器发送数据", len(s.listeners))
+	
+	for i, listener := range s.listeners {
 		select {
 		case listener <- data:
+			log.Printf("成功向监听器 %d 发送数据", i)
 		default:
-			// 如果通道已满，跳过这次通知
+			log.Printf("监听器 %d 通道已满，跳过通知", i)
 		}
 	}
+	
+	log.Printf("完成向所有监听器发送数据")
 }
 
 // Shutdown 关闭服务

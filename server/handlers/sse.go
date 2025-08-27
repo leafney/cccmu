@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -34,114 +35,122 @@ func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
 	c.Set("Connection", "keep-alive")
 	c.Set("Access-Control-Allow-Origin", "*")
 	c.Set("Access-Control-Allow-Headers", "Cache-Control")
+	
+	// 获取查询参数（在流式响应外获取）
+	hours := c.QueryInt("hours", 1)
+	if hours <= 0 {
+		hours = 1
+	}
+	
+	// 获取上下文，避免在goroutine中访问可能已释放的context
+	ctx := c.Context()
+	
+	log.Printf("新的SSE连接，时间范围: %d小时", hours)
 
-	// 获取查询参数
+	// 使用Fiber的流式响应
+	c.Response().SetBodyStreamWriter(func(w *bufio.Writer) {
+		// 立即发送连接确认
+		fmt.Fprintf(w, "event: connected\ndata: {\"status\":\"connected\"}\n\n")
+		w.Flush()
+		log.Printf("已发送SSE连接确认")
+
+		// 立即发送当前数据
+		allData := h.scheduler.GetLatestData()
+		filteredData := models.UsageDataList(allData).FilterByTimeRange(hours)
+		log.Printf("发送初始数据: %d条记录 (过滤前: %d条)", len(filteredData), len(allData))
+		
+		if len(filteredData) > 0 {
+			jsonData, err := json.Marshal(filteredData)
+			if err != nil {
+				log.Printf("序列化初始数据失败: %v", err)
+				return
+			}
+			fmt.Fprintf(w, "event: usage\ndata: %s\n\n", jsonData)
+			w.Flush()
+			log.Printf("已发送初始数据")
+		}
+
+		// 添加数据监听器
+		listener := h.scheduler.AddDataListener()
+		defer func() {
+			h.scheduler.RemoveDataListener(listener)
+			log.Printf("SSE监听器已清理")
+		}()
+		
+		log.Printf("SSE连接已建立监听器，缓冲区大小: %d", cap(listener))
+
+		// 设置连接保活
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
+		// 监听新数据和保活
+		for {
+			select {
+			case data, ok := <-listener:
+				if !ok {
+					log.Println("SSE监听器通道已关闭")
+					return // 监听器已关闭
+				}
+
+				log.Printf("SSE监听器收到数据: %d条记录", len(data))
+				// 按时间范围过滤数据后发送
+				filteredData := models.UsageDataList(data).FilterByTimeRange(hours)
+				log.Printf("过滤后发送数据: %d条记录 (过滤前: %d条, 时间范围: %d小时)", len(filteredData), len(data), hours)
+				
+				if len(filteredData) > 0 {
+					jsonData, err := json.Marshal(filteredData)
+					if err != nil {
+						log.Printf("序列化数据失败: %v", err)
+						continue
+					}
+					fmt.Fprintf(w, "event: usage\ndata: %s\n\n", jsonData)
+					if err := w.Flush(); err != nil {
+						log.Printf("刷新数据到客户端失败: %v", err)
+						return
+					}
+					log.Printf("已发送数据到客户端")
+				}
+
+			case <-ticker.C:
+				// 发送心跳保活
+				heartbeat := map[string]any{
+					"type":      "heartbeat",
+					"timestamp": time.Now().Format(time.RFC3339),
+				}
+				jsonData, err := json.Marshal(heartbeat)
+				if err != nil {
+					log.Printf("序列化心跳失败: %v", err)
+					continue
+				}
+				fmt.Fprintf(w, "event: heartbeat\ndata: %s\n\n", jsonData)
+				if err := w.Flush(); err != nil {
+					log.Printf("发送心跳失败: %v", err)
+					return
+				}
+
+			case <-ctx.Done():
+				log.Println("SSE连接上下文已取消")
+				return
+			}
+		}
+	})
+
+	return nil
+}
+
+
+// GetUsageData 获取历史数据
+func (h *SSEHandler) GetUsageData(c *fiber.Ctx) error {
+	// 获取时间范围参数
 	hours := c.QueryInt("hours", 1)
 	if hours <= 0 {
 		hours = 1
 	}
 
-	log.Printf("新的SSE连接，时间范围: %d小时", hours)
+	// 从调度器获取最新数据并按时间范围过滤
+	allData := h.scheduler.GetLatestData()
+	filteredData := models.UsageDataList(allData).FilterByTimeRange(hours)
+	log.Printf("API获取数据: %d条记录 (过滤前: %d条, 时间范围: %d小时)", len(filteredData), len(allData), hours)
 
-	// 立即发送当前数据
-	if err := h.sendCurrentData(c, hours); err != nil {
-		log.Printf("发送当前数据失败: %v", err)
-		return err
-	}
-
-	// 添加数据监听器
-	listener := h.scheduler.AddDataListener()
-	defer h.scheduler.RemoveDataListener(listener)
-
-	// 设置连接保活
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	// 监听新数据和保活
-	for {
-		select {
-		case data, ok := <-listener:
-			if !ok {
-				return nil // 监听器已关闭
-			}
-
-			// 直接发送监听器接收到的最新数据
-			if err := h.sendData(c, data); err != nil {
-				log.Printf("发送数据失败: %v", err)
-				return err
-			}
-
-		case <-ticker.C:
-			// 发送心跳保活
-			if err := h.sendHeartbeat(c); err != nil {
-				log.Printf("发送心跳失败: %v", err)
-				return err
-			}
-
-		case <-c.Context().Done():
-			log.Println("SSE连接已断开")
-			return nil
-		}
-	}
-}
-
-// sendCurrentData 发送当前数据
-func (h *SSEHandler) sendCurrentData(c *fiber.Ctx, hours int) error {
-	// 直接从调度器获取最新数据
-	data := h.scheduler.GetLatestData()
-	log.Printf("SSE发送当前数据: %d条记录", len(data))
-
-	return h.sendData(c, data)
-}
-
-// sendData 发送数据
-func (h *SSEHandler) sendData(c *fiber.Ctx, data models.UsageDataList) error {
-	jsonData, err := json.Marshal(data)
-	if err != nil {
-		return fmt.Errorf("序列化数据失败: %w", err)
-	}
-
-	log.Printf("SSE发送数据: %d条记录", len(data))
-	message := fmt.Sprintf("event: usage\ndata: %s\n\n", jsonData)
-	
-	if _, err := c.Write([]byte(message)); err != nil {
-		return fmt.Errorf("写入响应失败: %w", err)
-	}
-
-	// 强制刷新缓冲区
-	if flusher, ok := c.Response().BodyWriter().(interface{ Flush() }); ok {
-		flusher.Flush()
-	}
-
-	return nil
-}
-
-// sendHeartbeat 发送心跳
-func (h *SSEHandler) sendHeartbeat(c *fiber.Ctx) error {
-	heartbeat := map[string]interface{}{
-		"type":      "heartbeat",
-		"timestamp": time.Now().Format(time.RFC3339),
-	}
-
-	jsonData, err := json.Marshal(heartbeat)
-	if err != nil {
-		return err
-	}
-
-	message := fmt.Sprintf("event: heartbeat\ndata: %s\n\n", jsonData)
-	
-	if _, err := c.Write([]byte(message)); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// GetUsageData 获取历史数据
-func (h *SSEHandler) GetUsageData(c *fiber.Ctx) error {
-	// 直接从调度器获取最新数据
-	data := h.scheduler.GetLatestData()
-	log.Printf("API获取数据: %d条记录", len(data))
-
-	return c.JSON(models.Success(data))
+	return c.JSON(models.Success(filteredData))
 }

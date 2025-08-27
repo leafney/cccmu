@@ -18,11 +18,11 @@ type ClaudeAPIClient struct {
 // NewClaudeAPIClient 创建新的Claude API客户端
 func NewClaudeAPIClient(cookie string) *ClaudeAPIClient {
 	client := resty.New().
-		SetTimeout(30*time.Second).
+		SetTimeout(30 * time.Second).
 		SetRetryCount(3).
-		SetRetryWaitTime(5*time.Second).
-		SetRetryMaxWaitTime(20*time.Second).
-		SetDebug(true) // 开启调试模式
+		SetRetryWaitTime(5 * time.Second).
+		SetRetryMaxWaitTime(20 * time.Second).
+		SetDebug(false) // 开启调试模式
 
 	return &ClaudeAPIClient{
 		client: client,
@@ -74,6 +74,7 @@ func (c *ClaudeAPIClient) FetchUsageData() ([]models.UsageData, error) {
 		return nil, fmt.Errorf("API返回错误: %d %s", resp.StatusCode(), resp.Status())
 	}
 
+	fmt.Printf("API响应成功，状态码: %d\n", resp.StatusCode())
 	// 打印成功响应的前500个字符用于调试
 	bodyStr := string(resp.Body())
 	if len(bodyStr) > 500 {
