@@ -12,7 +12,7 @@ export function SettingsPanel({ className = '', onConfigUpdate }: SettingsPanelP
   const [config, setConfig] = useState<IUserConfig>({
     cookie: '',
     interval: 1,
-    timeRange: 1,
+    timeRange: 60,
     enabled: false
   });
   const [loading, setLoading] = useState(false);
@@ -168,17 +168,21 @@ export function SettingsPanel({ className = '', onConfigUpdate }: SettingsPanelP
         {/* 显示时间范围 */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            显示时间范围 (小时)
+            显示时间范围
           </label>
           <select
             className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200 hover:border-gray-400 bg-white"
             value={config.timeRange}
             onChange={(e) => updateConfig('timeRange', parseInt(e.target.value))}
           >
-            <option value={1}>1小时</option>
-            <option value={6}>6小时</option>
-            <option value={12}>12小时</option>
-            <option value={24}>24小时</option>
+            <option value={30}>30分钟</option>
+            <option value={60}>1小时</option>
+            <option value={120}>2小时</option>
+            <option value={180}>3小时</option>
+            <option value={300}>5小时</option>
+            <option value={360}>6小时</option>
+            <option value={720}>12小时</option>
+            <option value={1440}>24小时</option>
           </select>
         </div>
 

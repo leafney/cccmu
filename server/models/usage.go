@@ -17,16 +17,19 @@ type UsageData struct {
 type UsageDataList []UsageData
 
 // FilterByTimeRange 根据时间范围过滤数据
-func (u UsageDataList) FilterByTimeRange(hours int) UsageDataList {
-	if hours <= 0 {
+func (u UsageDataList) FilterByTimeRange(minutes int) UsageDataList {
+	if minutes <= 0 {
 		return u
 	}
 
-	cutoff := time.Now().Add(-time.Duration(hours) * time.Hour)
+	// 使用UTC时间计算截止时间，确保与API返回的UTC时间一致
+	cutoff := time.Now().UTC().Add(-time.Duration(minutes) * time.Minute)
 	var filtered UsageDataList
 
 	for _, data := range u {
-		if data.CreatedAt.After(cutoff) {
+		// 将数据时间转换为UTC进行比较
+		dataTimeUTC := data.CreatedAt.UTC()
+		if dataTimeUTC.After(cutoff) {
 			filtered = append(filtered, data)
 		}
 	}

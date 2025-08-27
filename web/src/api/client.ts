@@ -61,9 +61,9 @@ class APIClient {
     onMessage: (data: IUsageData[]) => void, 
     onError?: (error: Event) => void, 
     onOpen?: () => void,
-    timeRange: number = 1
+    timeRange: number = 60
   ): EventSource {
-    const eventSource = new EventSource(`${API_BASE}/usage/stream?hours=${timeRange}`);
+    const eventSource = new EventSource(`${API_BASE}/usage/stream?minutes=${timeRange}`);
     
     eventSource.addEventListener('connected', (event) => {
       console.log('SSE连接已确认:', event.data);

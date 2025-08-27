@@ -4,7 +4,7 @@ package models
 type UserConfig struct {
 	Cookie    string `json:"cookie"`    // Claude API Cookie
 	Interval  int    `json:"interval"`  // 数据获取间隔(分钟)
-	TimeRange int    `json:"timeRange"` // 显示时间范围(小时)
+	TimeRange int    `json:"timeRange"` // 显示时间范围(分钟)
 	Enabled   bool   `json:"enabled"`   // 任务是否启用
 }
 
@@ -12,9 +12,9 @@ type UserConfig struct {
 func GetDefaultConfig() *UserConfig {
 	return &UserConfig{
 		Cookie:    "",
-		Interval:  1,     // 1分钟
-		TimeRange: 1,     // 1小时
-		Enabled:   false, // 默认关闭
+		Interval:  1,      // 1分钟
+		TimeRange: 60,     // 60分钟(1小时)
+		Enabled:   false,  // 默认关闭
 	}
 }
 
@@ -23,8 +23,8 @@ func (c *UserConfig) Validate() error {
 	if c.Interval < 1 {
 		c.Interval = 1
 	}
-	if c.TimeRange < 1 {
-		c.TimeRange = 1
+	if c.TimeRange < 30 {
+		c.TimeRange = 60
 	}
 	return nil
 }

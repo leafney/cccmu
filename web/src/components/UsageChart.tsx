@@ -9,9 +9,7 @@ interface UsageChartProps {
 
 export function UsageChart({ data, className = '' }: UsageChartProps) {
   const chartData = useMemo(() => {
-    console.log('图表接收到数据:', data);
     if (!data || data.length === 0) {
-      console.log('数据为空，显示空状态');
       return {
         times: [],
         series: {}
@@ -72,10 +70,22 @@ export function UsageChart({ data, className = '' }: UsageChartProps) {
         color: '#ffffff'
       },
       formatter: (params: any[]) => {
-        let tooltip = `<div style="margin-bottom: 8px; font-weight: bold;">${new Date(params[0].name).toLocaleString()}</div>`;
+        // 格式化时间显示，显示完整的日期和时间
+        const date = new Date(params[0].name);
+        const formattedTime = date.toLocaleString('zh-CN', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        });
+        
+        let tooltip = `<div style="margin-bottom: 8px; font-weight: bold; color: #fbbf24;">${formattedTime}</div>`;
         params.forEach(param => {
           if (param.value > 0) {
-            tooltip += `<div>${param.marker}${param.seriesName}: ${param.value} credits</div>`;
+            tooltip += `<div style="margin: 4px 0;">${param.marker}<span style="margin-right: 8px;">${param.seriesName}</span><span style="font-weight: bold; color: #fbbf24;">${param.value} credits</span></div>`;
           }
         });
         return tooltip;

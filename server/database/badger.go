@@ -99,7 +99,7 @@ func (b *BadgerDB) SaveUsageData(data []models.UsageData) error {
 }
 
 // GetUsageData 获取指定时间范围内的积分使用数据
-func (b *BadgerDB) GetUsageData(hours int) (models.UsageDataList, error) {
+func (b *BadgerDB) GetUsageData(minutes int) (models.UsageDataList, error) {
 	var usageList models.UsageDataList
 	var totalCount int
 	var filteredCount int
@@ -111,8 +111,8 @@ func (b *BadgerDB) GetUsageData(hours int) (models.UsageDataList, error) {
 		defer it.Close()
 
 		prefix := []byte("usage:")
-		cutoff := time.Now().Add(-time.Duration(hours) * time.Hour).Unix()
-		log.Printf("数据查询: 时间范围=%d小时, 截止时间=%s", hours, time.Unix(cutoff, 0))
+		cutoff := time.Now().Add(-time.Duration(minutes) * time.Minute).Unix()
+		log.Printf("数据查询: 时间范围=%d分钟, 截止时间=%s", minutes, time.Unix(cutoff, 0))
 
 		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
 			item := it.Item()

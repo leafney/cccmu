@@ -69,24 +69,11 @@ func (c *ClaudeAPIClient) FetchUsageData() ([]models.UsageData, error) {
 	}
 
 	if resp.StatusCode() != 200 {
-		// 打印响应内容以便调试
-		fmt.Printf("API返回错误，状态码: %d，响应内容: %s\n", resp.StatusCode(), string(resp.Body()))
 		return nil, fmt.Errorf("API返回错误: %d %s", resp.StatusCode(), resp.Status())
-	}
-
-	fmt.Printf("API响应成功，状态码: %d\n", resp.StatusCode())
-	// 打印成功响应的前500个字符用于调试
-	bodyStr := string(resp.Body())
-	if len(bodyStr) > 500 {
-		fmt.Printf("API响应成功，前500字符: %s...\n", bodyStr[:500])
-	} else {
-		fmt.Printf("API响应成功，完整内容: %s\n", bodyStr)
 	}
 
 	var apiResp []ClaudeUsageData
 	if err := json.Unmarshal(resp.Body(), &apiResp); err != nil {
-		// 打印解析失败的响应内容
-		fmt.Printf("JSON解析失败，响应内容: %s\n", string(resp.Body()))
 		return nil, fmt.Errorf("解析响应失败: %w", err)
 	}
 
@@ -111,16 +98,12 @@ func (c *ClaudeAPIClient) ValidateCookie() error {
 	}
 
 	if resp.StatusCode() == 401 {
-		fmt.Printf("Cookie验证失败: 401 Unauthorized，响应内容: %s\n", string(resp.Body()))
 		return fmt.Errorf("Cookie无效或已过期")
 	}
 
 	if resp.StatusCode() != 200 {
-		fmt.Printf("Cookie验证失败，状态码: %d，响应内容: %s\n", resp.StatusCode(), string(resp.Body()))
 		return fmt.Errorf("Cookie验证失败: %d %s", resp.StatusCode(), resp.Status())
 	}
-
-	fmt.Printf("Cookie验证成功，响应: %s\n", string(resp.Body()))
 	return nil
 }
 

@@ -113,16 +113,29 @@ export function Dashboard() {
   }, [config?.timeRange, connectSSE]); // 只在timeRange变化时重连
 
   // 处理配置更新
-  const handleConfigUpdate = (newConfig: IUserConfig) => {
+  const handleConfigUpdate = async (newConfig: IUserConfig) => {
     setConfig(newConfig);
-    setIsMonitoring(newConfig.enabled);
+    
+    // 检查实际的任务运行状态，确保状态同步
+    try {
+      const statusResponse = await fetch('/api/control/status');
+      const statusResult = await statusResponse.json();
+      if (statusResult.data) {
+        setIsMonitoring(statusResult.data.running);
+      } else {
+        setIsMonitoring(newConfig.enabled);
+      }
+    } catch (error) {
+      console.error('检查任务状态失败:', error);
+      setIsMonitoring(newConfig.enabled);
+    }
   };
 
   // 获取历史数据
   const loadHistoricalData = useCallback(async () => {
     try {
-      const hours = config?.timeRange || 1;
-      const response = await fetch(`/api/usage/data?hours=${hours}`);
+      const minutes = config?.timeRange || 60;
+      const response = await fetch(`/api/usage/data?minutes=${minutes}`);
       const result = await response.json();
       if (result.data) {
         setUsageData(result.data);
@@ -143,23 +156,76 @@ export function Dashboard() {
   const toggleMonitoring = async () => {
     try {
       if (isMonitoring) {
-        await apiClient.stopTask();
+        // 先立即更新UI状态为关闭，提供即时反馈
         setIsMonitoring(false);
+        
+        try {
+          await apiClient.stopTask();
+          
+          // 停止任务后检查实际状态
+          const statusResponse = await fetch('/api/control/status');
+          const statusResult = await statusResponse.json();
+          if (statusResult.data) {
+            // 如果实际状态与UI状态不一致，恢复UI状态
+            if (statusResult.data.running !== false) {
+              setIsMonitoring(statusResult.data.running);
+            }
+          }
+          
+          // 同步更新配置中的enabled状态
+          if (config) {
+            const updatedConfig = { ...config, enabled: false };
+            await apiClient.updateConfig(updatedConfig);
+            setConfig(updatedConfig);
+          }
+        } catch (error) {
+          // 停止操作失败，恢复UI状态为开启
+          console.error('停止监控失败:', error);
+          setIsMonitoring(true);
+          throw error;
+        }
       } else {
-        await apiClient.startTask();
+        // 启动监控时先立即更新UI状态
         setIsMonitoring(true);
         
-        // 监控启动后立即获取一次数据
-        setTimeout(async () => {
-          try {
-            await loadHistoricalData();
-          } catch (error) {
-            console.error('立即获取数据失败:', error);
+        try {
+          await apiClient.startTask();
+          
+          // 启动任务后检查实际状态
+          const statusResponse = await fetch('/api/control/status');
+          const statusResult = await statusResponse.json();
+          if (statusResult.data) {
+            // 如果实际状态与UI状态不一致，恢复UI状态
+            if (statusResult.data.running !== true) {
+              setIsMonitoring(statusResult.data.running);
+            }
           }
-        }, 500); // 延迟500ms确保后端任务已启动
+          
+          // 同步更新配置中的enabled状态
+          if (config) {
+            const updatedConfig = { ...config, enabled: true };
+            await apiClient.updateConfig(updatedConfig);
+            setConfig(updatedConfig);
+            // 配置更新后，useEffect会自动触发loadHistoricalData，无需重复调用
+          }
+        } catch (error) {
+          // 启动操作失败，恢复UI状态为关闭
+          console.error('启动监控失败:', error);
+          setIsMonitoring(false);
+          throw error;
+        }
       }
     } catch (error) {
-      console.error('切换监控状态失败:', error);
+      // 最终错误处理：重新加载实际状态
+      try {
+        const statusResponse = await fetch('/api/control/status');
+        const statusResult = await statusResponse.json();
+        if (statusResult.data) {
+          setIsMonitoring(statusResult.data.running);
+        }
+      } catch (statusError) {
+        console.error('重新加载状态失败:', statusError);
+      }
     }
   };
 

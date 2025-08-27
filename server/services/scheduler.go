@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"sync"
@@ -54,6 +55,7 @@ func (s *SchedulerService) Start() error {
 
 	// 如果已经在运行，先停止再重新启动
 	if s.isRunning {
+		s.scheduler.StopJobs()
 		s.scheduler.Shutdown()
 		s.isRunning = false
 		log.Println("停止现有任务，准备重新启动")
@@ -112,9 +114,27 @@ func (s *SchedulerService) Stop() error {
 		return fmt.Errorf("任务未运行")
 	}
 
-	err := s.scheduler.Shutdown()
-	if err != nil {
-		return fmt.Errorf("停止调度器失败: %w", err)
+	// 设置较短的超时时间，避免长时间等待
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// 使用带超时的停止方法
+	if err := s.scheduler.StopJobs(); err != nil {
+		log.Printf("停止任务失败: %v", err)
+	}
+
+	// 等待所有任务完成或超时
+	select {
+	case <-ctx.Done():
+		log.Println("停止调度器超时，强制关闭")
+	case <-time.After(100 * time.Millisecond):
+		// 短暂等待确保任务停止
+	}
+
+	// 强制关闭调度器
+	if err := s.scheduler.Shutdown(); err != nil {
+		log.Printf("强制关闭调度器失败: %v", err)
+		// 不返回错误，继续执行清理
 	}
 
 	s.isRunning = false
@@ -144,6 +164,7 @@ func (s *SchedulerService) UpdateConfig(newConfig *models.UserConfig) error {
 
 	// 如果任务正在运行，先停止
 	if s.isRunning {
+		s.scheduler.StopJobs()
 		s.scheduler.Shutdown()
 		s.isRunning = false
 	}
@@ -217,33 +238,18 @@ func (s *SchedulerService) FetchDataManually() error {
 
 // fetchAndSaveData 获取并保存数据
 func (s *SchedulerService) fetchAndSaveData() error {
-	log.Printf("定时任务触发: 开始获取积分使用数据... (当前监听器数量: %d)", len(s.listeners))
-
 	data, err := s.apiClient.FetchUsageData()
 	if err != nil {
 		log.Printf("获取数据失败: %v", err)
 		return err
 	}
 
-	// 直接通知监听器，不保存到数据库
-	log.Printf("获取到 %d 条积分数据，直接推送给前端", len(data))
-	
-	// 打印前3条数据的详细信息用于调试
-	for i, item := range data {
-		if i < 3 {
-			log.Printf("数据[%d]: ID=%d, 积分=%d, 时间=%s, 模型=%s", i, item.ID, item.CreditsUsed, item.CreatedAt, item.Model)
-		}
-	}
-
 	// 更新最新数据并通知监听器
 	s.mu.Lock()
 	s.lastData = data
-	currentListeners := len(s.listeners)
 	s.mu.Unlock()
 
-	log.Printf("开始通知 %d 个监听器", currentListeners)
 	s.notifyListeners(data)
-	log.Printf("数据推送完成")
 
 	return nil
 }
@@ -283,19 +289,15 @@ func (s *SchedulerService) RemoveDataListener(listener chan []models.UsageData) 
 func (s *SchedulerService) notifyListeners(data []models.UsageData) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
-	log.Printf("开始向 %d 个监听器发送数据", len(s.listeners))
 	
-	for i, listener := range s.listeners {
+	for _, listener := range s.listeners {
 		select {
 		case listener <- data:
-			log.Printf("成功向监听器 %d 发送数据", i)
+			// 数据发送成功
 		default:
-			log.Printf("监听器 %d 通道已满，跳过通知", i)
+			// 通道已满，跳过通知
 		}
 	}
-	
-	log.Printf("完成向所有监听器发送数据")
 }
 
 // Shutdown 关闭服务
