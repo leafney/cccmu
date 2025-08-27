@@ -60,19 +60,13 @@ func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
 	// 监听新数据和保活
 	for {
 		select {
-		case _, ok := <-listener:
+		case data, ok := <-listener:
 			if !ok {
 				return nil // 监听器已关闭
 			}
 
-			// 获取完整的时间范围数据
-			allData, err := h.db.GetUsageData(hours)
-			if err != nil {
-				log.Printf("获取数据失败: %v", err)
-				continue
-			}
-
-			if err := h.sendData(c, allData); err != nil {
+			// 直接发送监听器接收到的最新数据
+			if err := h.sendData(c, data); err != nil {
 				log.Printf("发送数据失败: %v", err)
 				return err
 			}
@@ -93,10 +87,9 @@ func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
 
 // sendCurrentData 发送当前数据
 func (h *SSEHandler) sendCurrentData(c *fiber.Ctx, hours int) error {
-	data, err := h.db.GetUsageData(hours)
-	if err != nil {
-		return fmt.Errorf("获取数据失败: %w", err)
-	}
+	// 直接从调度器获取最新数据
+	data := h.scheduler.GetLatestData()
+	log.Printf("SSE发送当前数据: %d条记录", len(data))
 
 	return h.sendData(c, data)
 }
@@ -108,13 +101,17 @@ func (h *SSEHandler) sendData(c *fiber.Ctx, data models.UsageDataList) error {
 		return fmt.Errorf("序列化数据失败: %w", err)
 	}
 
+	log.Printf("SSE发送数据: %d条记录", len(data))
 	message := fmt.Sprintf("event: usage\ndata: %s\n\n", jsonData)
 	
 	if _, err := c.Write([]byte(message)); err != nil {
 		return fmt.Errorf("写入响应失败: %w", err)
 	}
 
-	// Fiber v2中返回即可
+	// 强制刷新缓冲区
+	if flusher, ok := c.Response().BodyWriter().(interface{ Flush() }); ok {
+		flusher.Flush()
+	}
 
 	return nil
 }
@@ -142,17 +139,9 @@ func (h *SSEHandler) sendHeartbeat(c *fiber.Ctx) error {
 
 // GetUsageData 获取历史数据
 func (h *SSEHandler) GetUsageData(c *fiber.Ctx) error {
-	// 获取查询参数
-	hours := c.QueryInt("hours", 1)
-	if hours <= 0 {
-		hours = 1
-	}
-
-	data, err := h.db.GetUsageData(hours)
-	if err != nil {
-		log.Printf("获取数据失败: %v", err)
-		return c.Status(500).JSON(models.Error(500, "获取数据失败", err))
-	}
+	// 直接从调度器获取最新数据
+	data := h.scheduler.GetLatestData()
+	log.Printf("API获取数据: %d条记录", len(data))
 
 	return c.JSON(models.Success(data))
 }

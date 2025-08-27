@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { UsageChart } from '../components/UsageChart';
-import { SettingsPanel } from '../components/SettingsPanel';
-import { StatusIndicator } from '../components/StatusIndicator';
+import { SettingsModal } from '../components/SettingsModal';
 import type { IUsageData, IUserConfig } from '../types';
 import { apiClient } from '../api/client';
+import { Settings, Wifi, WifiOff, RefreshCw } from 'lucide-react';
 
 export function Dashboard() {
   const [usageData, setUsageData] = useState<IUsageData[]>([]);
@@ -12,12 +12,24 @@ export function Dashboard() {
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [eventSource, setEventSource] = useState<EventSource | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const retryTimeoutRef = useRef<number | null>(null);
 
   // 建立SSE连接
   const connectSSE = useCallback(() => {
-    if (eventSource) {
-      eventSource.close();
+    // 清理现有的重试计时器
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
     }
+
+    // 关闭现有连接
+    setEventSource(prev => {
+      if (prev) {
+        prev.close();
+      }
+      return null;
+    });
 
     const newEventSource = apiClient.createSSEConnection(
       (data: IUsageData[]) => {
@@ -29,35 +41,39 @@ export function Dashboard() {
         console.error('SSE连接错误:', error);
         setIsConnected(false);
         // 5秒后重试连接
-        setTimeout(connectSSE, 5000);
-      }
+        retryTimeoutRef.current = setTimeout(() => {
+          connectSSE();
+        }, 5000);
+      },
+      config?.timeRange || 1
     );
 
-    newEventSource.onopen = () => {
-      console.log('SSE连接已建立');
-      setIsConnected(true);
-    };
-
-    // EventSource 没有 onclose 事件，这里不需要设置
 
     setEventSource(newEventSource);
-  }, [config?.timeRange, eventSource]);
+  }, [config?.timeRange]);
 
-  // 加载初始配置
+  // 加载初始配置和任务状态
   useEffect(() => {
-    const loadConfig = async () => {
+    const loadConfigAndStatus = async () => {
       try {
-        const response = await apiClient.getConfig();
-        if (response.data) {
-          setConfig(response.data);
-          setIsMonitoring(response.data.enabled);
+        // 加载配置
+        const configResponse = await apiClient.getConfig();
+        if (configResponse.data) {
+          setConfig(configResponse.data);
+        }
+
+        // 加载任务运行状态
+        const statusResponse = await fetch('/api/control/status');
+        const statusResult = await statusResponse.json();
+        if (statusResult.data) {
+          setIsMonitoring(statusResult.data.running);
         }
       } catch (error) {
-        console.error('加载配置失败:', error);
+        console.error('加载配置和状态失败:', error);
       }
     };
 
-    loadConfig();
+    loadConfigAndStatus();
   }, []);
 
   // 配置更新后重新连接SSE
@@ -67,6 +83,12 @@ export function Dashboard() {
     }
 
     return () => {
+      // 清理重试计时器
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
+      // 关闭SSE连接
       if (eventSource) {
         eventSource.close();
       }
@@ -101,121 +123,106 @@ export function Dashboard() {
     }
   }, [config, loadHistoricalData]);
 
+  const toggleMonitoring = async () => {
+    try {
+      if (isMonitoring) {
+        await apiClient.stopTask();
+      } else {
+        await apiClient.startTask();
+      }
+      setIsMonitoring(!isMonitoring);
+    } catch (error) {
+      console.error('切换监控状态失败:', error);
+    }
+  };
+
+  // 手动刷新数据
+  const handleRefresh = async () => {
+    try {
+      await fetch('/api/refresh', { method: 'POST' });
+      await loadHistoricalData();
+    } catch (error) {
+      console.error('手动刷新失败:', error);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-7xl mx-auto">
-        {/* 页面标题 */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Claude Code积分监控</h1>
-          <p className="mt-2 text-gray-600">实时监控Claude Code的积分使用情况</p>
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900">
+      {/* 顶部控制栏 */}
+      <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between p-4 md:p-6">
+        {/* 左侧标题 */}
+        <div className="text-white">
+          <h1 className="text-xl md:text-2xl font-bold">Claude Code 积分监控</h1>
+          <p className="text-sm text-white/70 mt-1">
+            {lastUpdate ? `最后更新: ${lastUpdate.toLocaleTimeString()}` : '等待数据...'}
+          </p>
         </div>
 
-        {/* 主要内容区域 */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* 左侧主要区域 - 图表 */}
-          <div className="lg:col-span-3">
-            <UsageChart data={usageData} className="mb-6" />
-            
-            {/* 数据统计卡片 */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-white rounded-lg shadow-sm border p-6">
-                <div className="text-2xl font-bold text-blue-600">
-                  {usageData.reduce((sum, item) => sum + item.creditsUsed, 0)}
-                </div>
-                <div className="text-sm text-gray-600">总积分使用</div>
-              </div>
-              
-              <div className="bg-white rounded-lg shadow-sm border p-6">
-                <div className="text-2xl font-bold text-green-600">
-                  {usageData.length}
-                </div>
-                <div className="text-sm text-gray-600">API调用次数</div>
-              </div>
-              
-              <div className="bg-white rounded-lg shadow-sm border p-6">
-                <div className="text-2xl font-bold text-purple-600">
-                  {new Set(usageData.map(item => item.model)).size}
-                </div>
-                <div className="text-sm text-gray-600">使用模型数</div>
-              </div>
-            </div>
+        {/* 右侧控制区 */}
+        <div className="flex items-center space-x-4">
+          {/* 连接状态指示 */}
+          <div className="flex items-center space-x-2">
+            {isConnected ? (
+              <Wifi className="w-5 h-5 text-green-400" />
+            ) : (
+              <WifiOff className="w-5 h-5 text-red-400" />
+            )}
+            <span className="text-sm text-white/80 hidden md:block">
+              {isConnected ? '已连接' : '连接断开'}
+            </span>
           </div>
 
-          {/* 右侧侧边栏 */}
-          <div className="lg:col-span-1 space-y-6">
-            {/* 状态指示器 */}
-            <StatusIndicator
-              isConnected={isConnected}
-              isMonitoring={isMonitoring}
-              lastUpdate={lastUpdate || undefined}
-            />
-            
-            {/* 设置面板 */}
-            <SettingsPanel onConfigUpdate={handleConfigUpdate} />
+          {/* 监控状态开关 */}
+          <div className="flex items-center space-x-2">
+            <span className="text-sm text-white/80 hidden md:block">监控</span>
+            <button
+              onClick={toggleMonitoring}
+              disabled={!config?.cookie || config.cookie === ''}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50 ${
+                isMonitoring ? 'bg-green-500' : 'bg-gray-600'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
+                  isMonitoring ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
           </div>
+
+          {/* 手动刷新按钮 */}
+          <button
+            onClick={handleRefresh}
+            className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+            title="手动刷新数据"
+          >
+            <RefreshCw className="w-5 h-5" />
+          </button>
+
+          {/* 设置按钮 */}
+          <button
+            onClick={() => setShowSettings(true)}
+            className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+            title="打开设置"
+          >
+            <Settings className="w-5 h-5" />
+          </button>
         </div>
-
-        {/* 底部数据表格 */}
-        {usageData.length > 0 && (
-          <div className="mt-8 bg-white rounded-lg shadow-sm border overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900">最近使用记录</h3>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      时间
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      模型
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      积分
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      状态
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      端点
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {usageData.slice(0, 10).map((item, index) => (
-                    <tr key={`${item.id}-${index}`} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {new Date(item.createdAt).toLocaleString()}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="inline-flex px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
-                          {item.model}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {item.creditsUsed}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                          item.statusCode === 200 
-                            ? 'bg-green-100 text-green-800' 
-                            : 'bg-red-100 text-red-800'
-                        }`}>
-                          {item.statusCode}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 truncate max-w-xs">
-                        {item.endpoint}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
       </div>
+
+      {/* 全屏图表区域 */}
+      <div className="h-screen w-full flex items-center justify-center p-4 pt-20">
+        <div className="w-full h-full max-h-[calc(100vh-100px)]">
+          <UsageChart data={usageData} className="h-full" />
+        </div>
+      </div>
+
+      {/* 设置模态弹窗 */}
+      <SettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        onConfigUpdate={handleConfigUpdate}
+      />
     </div>
   );
 }

@@ -101,6 +101,8 @@ func (b *BadgerDB) SaveUsageData(data []models.UsageData) error {
 // GetUsageData 获取指定时间范围内的积分使用数据
 func (b *BadgerDB) GetUsageData(hours int) (models.UsageDataList, error) {
 	var usageList models.UsageDataList
+	var totalCount int
+	var filteredCount int
 
 	err := b.db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
@@ -110,10 +112,12 @@ func (b *BadgerDB) GetUsageData(hours int) (models.UsageDataList, error) {
 
 		prefix := []byte("usage:")
 		cutoff := time.Now().Add(-time.Duration(hours) * time.Hour).Unix()
+		log.Printf("数据查询: 时间范围=%d小时, 截止时间=%s", hours, time.Unix(cutoff, 0))
 
 		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
 			item := it.Item()
 			key := item.Key()
+			totalCount++
 
 			var usage models.UsageData
 			err := item.Value(func(val []byte) error {
@@ -127,9 +131,18 @@ func (b *BadgerDB) GetUsageData(hours int) (models.UsageDataList, error) {
 			// 过滤时间范围
 			if usage.CreatedAt.Unix() >= cutoff {
 				usageList = append(usageList, usage)
+				filteredCount++
+				if filteredCount <= 3 {
+					log.Printf("符合条件的数据: ID=%d, 积分=%d, 时间=%s", usage.ID, usage.CreditsUsed, usage.CreatedAt)
+				}
+			} else {
+				if totalCount <= 3 {
+					log.Printf("时间超出范围的数据: ID=%d, 积分=%d, 时间=%s", usage.ID, usage.CreditsUsed, usage.CreatedAt)
+				}
 			}
 		}
 
+		log.Printf("数据查询完成: 总数=%d, 符合条件=%d", totalCount, filteredCount)
 		return nil
 	})
 

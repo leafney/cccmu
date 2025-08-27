@@ -57,23 +57,34 @@ class APIClient {
   }
 
   // 创建SSE连接
-  createSSEConnection(onMessage: (data: IUsageData[]) => void, onError?: (error: Event) => void): EventSource {
-    const eventSource = new EventSource(`${API_BASE}/usage/stream`);
+  createSSEConnection(onMessage: (data: IUsageData[]) => void, onError?: (error: Event) => void, timeRange: number = 1): EventSource {
+    const eventSource = new EventSource(`${API_BASE}/usage/stream?hours=${timeRange}`);
     
-    eventSource.onmessage = (event) => {
+    eventSource.addEventListener('usage', (event) => {
       try {
+        console.log('收到SSE usage事件:', event.data);
         const data = JSON.parse(event.data);
+        console.log('解析后的数据:', data);
         onMessage(data);
       } catch (error) {
-        console.error('解析SSE数据失败:', error);
+        console.error('解析SSE数据失败:', error, event.data);
       }
-    };
+    });
+
+    eventSource.addEventListener('heartbeat', (event) => {
+      // 心跳事件，保持连接活跃
+      console.debug('收到SSE心跳:', event.data);
+    });
 
     eventSource.onerror = (error) => {
       console.error('SSE连接错误:', error);
       if (onError) {
         onError(error);
       }
+    };
+
+    eventSource.onopen = () => {
+      console.log('SSE连接已建立');
     };
 
     return eventSource;

@@ -52,8 +52,11 @@ func (s *SchedulerService) Start() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// 如果已经在运行，先停止再重新启动
 	if s.isRunning {
-		return fmt.Errorf("任务已在运行中")
+		s.scheduler.Shutdown()
+		s.isRunning = false
+		log.Println("停止现有任务，准备重新启动")
 	}
 
 	// 更新配置
@@ -206,12 +209,14 @@ func (s *SchedulerService) fetchAndSaveData() error {
 		return err
 	}
 
-	if len(data) > 0 {
-		if err := s.db.SaveUsageData(data); err != nil {
-			log.Printf("保存数据失败: %v", err)
-			return err
+	// 直接通知监听器，不保存到数据库
+	log.Printf("获取到 %d 条积分数据，直接推送给前端", len(data))
+	
+	// 打印前3条数据的详细信息用于调试
+	for i, item := range data {
+		if i < 3 {
+			log.Printf("数据[%d]: ID=%d, 积分=%d, 时间=%s, 模型=%s", i, item.ID, item.CreditsUsed, item.CreatedAt, item.Model)
 		}
-		log.Printf("成功保存 %d 条数据", len(data))
 	}
 
 	// 更新最新数据并通知监听器
@@ -220,11 +225,6 @@ func (s *SchedulerService) fetchAndSaveData() error {
 	s.mu.Unlock()
 
 	s.notifyListeners(data)
-
-	// 清理过期数据（保留24小时）
-	if err := s.db.CleanOldData(24); err != nil {
-		log.Printf("清理过期数据失败: %v", err)
-	}
 
 	return nil
 }

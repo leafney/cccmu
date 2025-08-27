@@ -21,7 +21,8 @@ func NewClaudeAPIClient(cookie string) *ClaudeAPIClient {
 		SetTimeout(30*time.Second).
 		SetRetryCount(3).
 		SetRetryWaitTime(5*time.Second).
-		SetRetryMaxWaitTime(20*time.Second)
+		SetRetryMaxWaitTime(20*time.Second).
+		SetDebug(true) // 开启调试模式
 
 	return &ClaudeAPIClient{
 		client: client,
@@ -44,9 +45,9 @@ type ClaudeUsageData struct {
 	ID          int    `json:"id"`
 	Type        string `json:"type"`
 	Endpoint    string `json:"endpoint"`
-	StatusCode  int    `json:"status_code"`
-	CreditsUsed int    `json:"credits_used"`
-	CreatedAt   string `json:"created_at"`
+	StatusCode  int    `json:"statusCode"`
+	CreditsUsed int    `json:"creditsUsed"`
+	CreatedAt   string `json:"createdAt"`
 	Model       string `json:"model"`
 }
 
@@ -58,23 +59,37 @@ func (c *ClaudeAPIClient) FetchUsageData() ([]models.UsageData, error) {
 
 	resp, err := c.client.R().
 		SetHeader("Cookie", c.cookie).
-		SetHeader("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36").
-		Get("https://claude.ai/api/user/usage")
+		SetHeader("Referer", "https://www.aicodemirror.com/dashboard/usage").
+		SetHeader("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36").
+		SetHeader("Accept", "application/json, text/plain, */*").
+		Get("https://www.aicodemirror.com/api/user/usage")
 
 	if err != nil {
 		return nil, fmt.Errorf("API请求失败: %w", err)
 	}
 
 	if resp.StatusCode() != 200 {
+		// 打印响应内容以便调试
+		fmt.Printf("API返回错误，状态码: %d，响应内容: %s\n", resp.StatusCode(), string(resp.Body()))
 		return nil, fmt.Errorf("API返回错误: %d %s", resp.StatusCode(), resp.Status())
 	}
 
-	var apiResp ClaudeUsageResponse
+	// 打印成功响应的前500个字符用于调试
+	bodyStr := string(resp.Body())
+	if len(bodyStr) > 500 {
+		fmt.Printf("API响应成功，前500字符: %s...\n", bodyStr[:500])
+	} else {
+		fmt.Printf("API响应成功，完整内容: %s\n", bodyStr)
+	}
+
+	var apiResp []ClaudeUsageData
 	if err := json.Unmarshal(resp.Body(), &apiResp); err != nil {
+		// 打印解析失败的响应内容
+		fmt.Printf("JSON解析失败，响应内容: %s\n", string(resp.Body()))
 		return nil, fmt.Errorf("解析响应失败: %w", err)
 	}
 
-	return c.convertToUsageData(apiResp.Data), nil
+	return c.convertToUsageData(apiResp), nil
 }
 
 // ValidateCookie 验证Cookie有效性
@@ -85,21 +100,26 @@ func (c *ClaudeAPIClient) ValidateCookie() error {
 
 	resp, err := c.client.R().
 		SetHeader("Cookie", c.cookie).
-		SetHeader("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36").
-		Get("https://claude.ai/api/user")
+		SetHeader("Referer", "https://www.aicodemirror.com/dashboard/usage").
+		SetHeader("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36").
+		SetHeader("Accept", "application/json, text/plain, */*").
+		Get("https://www.aicodemirror.com/api/user/usage/chart")
 
 	if err != nil {
 		return fmt.Errorf("Cookie验证请求失败: %w", err)
 	}
 
 	if resp.StatusCode() == 401 {
+		fmt.Printf("Cookie验证失败: 401 Unauthorized，响应内容: %s\n", string(resp.Body()))
 		return fmt.Errorf("Cookie无效或已过期")
 	}
 
 	if resp.StatusCode() != 200 {
+		fmt.Printf("Cookie验证失败，状态码: %d，响应内容: %s\n", resp.StatusCode(), string(resp.Body()))
 		return fmt.Errorf("Cookie验证失败: %d %s", resp.StatusCode(), resp.Status())
 	}
 
+	fmt.Printf("Cookie验证成功，响应: %s\n", string(resp.Body()))
 	return nil
 }
 
