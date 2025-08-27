@@ -57,7 +57,6 @@ build: build-backend
 clean:
 	@echo "清理构建文件..."
 	@rm -rf $(FRONTEND_DIR)/dist
-	@rm -rf $(FRONTEND_DIR)/node_modules
 	@rm -f $(BINARY_NAME)
 	@rm -rf $(BUILD_DIR)
 	@echo "清理完成"

@@ -150,7 +150,8 @@ export function UsageChart({ data, className = '' }: UsageChartProps) {
         data: chartData.series[model],
         smooth: true,
         symbol: 'circle',
-        symbolSize: 6,
+        symbolSize: 8,
+        showSymbol: true,
         lineStyle: {
           width: 3,
           color: colors[index % colors.length]
@@ -160,7 +161,35 @@ export function UsageChart({ data, className = '' }: UsageChartProps) {
           color: colors[index % colors.length]
         },
         itemStyle: {
-          color: colors[index % colors.length]
+          color: colors[index % colors.length],
+          borderWidth: 2,
+          borderColor: '#fff'
+        },
+        label: {
+          show: true,
+          position: 'top',
+          formatter: (params: any) => {
+            // 只在积分大于0时显示标签
+            return params.value > 0 ? `${params.value}` : '';
+          },
+          color: colors[index % colors.length],
+          fontSize: 11,
+          fontWeight: 'bold',
+          backgroundColor: 'rgba(0, 0, 0, 0.6)',
+          borderRadius: 4,
+          padding: [2, 6],
+          borderWidth: 1,
+          borderColor: colors[index % colors.length]
+        },
+        emphasis: {
+          focus: 'series',
+          label: {
+            fontSize: 12
+          },
+          itemStyle: {
+            shadowBlur: 10,
+            shadowColor: colors[index % colors.length]
+          }
         }
       };
     }),

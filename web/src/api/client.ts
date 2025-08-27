@@ -57,9 +57,18 @@ class APIClient {
   }
 
   // 创建SSE连接
-  createSSEConnection(onMessage: (data: IUsageData[]) => void, onError?: (error: Event) => void, timeRange: number = 1): EventSource {
+  createSSEConnection(
+    onMessage: (data: IUsageData[]) => void, 
+    onError?: (error: Event) => void, 
+    onOpen?: () => void,
+    timeRange: number = 1
+  ): EventSource {
     const eventSource = new EventSource(`${API_BASE}/usage/stream?hours=${timeRange}`);
     
+    eventSource.addEventListener('connected', (event) => {
+      console.log('SSE连接已确认:', event.data);
+    });
+
     eventSource.addEventListener('usage', (event) => {
       try {
         console.log('收到SSE usage事件:', event.data);
@@ -84,7 +93,15 @@ class APIClient {
     };
 
     eventSource.onopen = () => {
-      console.log('SSE连接已建立');
+      console.log('SSE连接已建立 - onopen事件');
+      if (onOpen) {
+        onOpen();
+      }
+    };
+    
+    // 添加连接状态监听
+    eventSource.onmessage = (event) => {
+      console.log('SSE收到默认消息:', event);
     };
 
     return eventSource;
