@@ -82,3 +82,20 @@ func (h *ConfigHandler) UpdateConfig(c *fiber.Ctx) error {
 
 	return c.JSON(models.SuccessMessage("配置更新成功"))
 }
+
+// ClearCookie 清除Cookie
+func (h *ConfigHandler) ClearCookie(c *fiber.Ctx) error {
+	// 清除数据库中的Cookie
+	if err := h.db.ClearCookie(); err != nil {
+		log.Printf("清除Cookie失败: %v", err)
+		return c.Status(500).JSON(models.Error(500, "清除Cookie失败", err))
+	}
+
+	// 更新调度器，停止当前任务
+	if err := h.scheduler.Stop(); err != nil {
+		log.Printf("停止调度器失败: %v", err)
+	}
+
+	log.Printf("Cookie已清除，监控任务已停止")
+	return c.JSON(models.SuccessMessage("Cookie已清除"))
+}

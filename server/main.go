@@ -74,6 +74,7 @@ func main() {
 		// 配置相关
 		api.Get("/config", configHandler.GetConfig)
 		api.Put("/config", configHandler.UpdateConfig)
+		api.Delete("/config/cookie", configHandler.ClearCookie)
 
 		// 控制相关
 		api.Post("/control/start", controlHandler.StartTask)

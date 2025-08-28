@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save, Settings, Play, Square } from 'lucide-react';
+import { Save, Settings, Trash2 } from 'lucide-react';
 import type { IUserConfig } from '../types';
 import { apiClient } from '../api/client';
 
@@ -15,20 +15,17 @@ export function SettingsPanel({ className = '', onConfigUpdate }: SettingsPanelP
     timeRange: 60,
     enabled: false
   });
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [taskRunning, setTaskRunning] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // 加载当前配置
   useEffect(() => {
     loadConfig();
-    checkTaskStatus();
   }, []);
 
   const loadConfig = async () => {
     try {
-      setLoading(true);
       const response = await apiClient.getConfig();
       if (response.data) {
         setConfig(response.data);
@@ -36,17 +33,6 @@ export function SettingsPanel({ className = '', onConfigUpdate }: SettingsPanelP
     } catch (error) {
       console.error('加载配置失败:', error);
       showMessage('error', '加载配置失败');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const checkTaskStatus = async () => {
-    try {
-      await apiClient.getConfig(); // 可以添加专门的状态检查接口
-      // 这里可以检查任务运行状态
-    } catch (error) {
-      console.error('检查任务状态失败:', error);
     }
   };
 
@@ -64,44 +50,22 @@ export function SettingsPanel({ className = '', onConfigUpdate }: SettingsPanelP
     }
   };
 
-  const handleStartTask = async () => {
+  const handleClearCookie = async () => {
     try {
-      setLoading(true);
-      await apiClient.startTask();
-      setTaskRunning(true);
-      showMessage('success', '监控任务已启动');
+      setClearing(true);
+      await apiClient.clearCookie();
+      
+      // 更新本地状态
+      const updatedConfig = { ...config, cookie: '' };
+      setConfig(updatedConfig);
+      
+      showMessage('success', 'Cookie已清除，监控已停止');
+      onConfigUpdate?.(updatedConfig);
     } catch (error) {
-      console.error('启动任务失败:', error);
-      showMessage('error', '启动任务失败');
+      console.error('清除Cookie失败:', error);
+      showMessage('error', '清除Cookie失败');
     } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleStopTask = async () => {
-    try {
-      setLoading(true);
-      await apiClient.stopTask();
-      setTaskRunning(false);
-      showMessage('success', '监控任务已停止');
-    } catch (error) {
-      console.error('停止任务失败:', error);
-      showMessage('error', '停止任务失败');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRefreshData = async () => {
-    try {
-      setLoading(true);
-      await apiClient.refreshData();
-      showMessage('success', '数据刷新成功');
-    } catch (error) {
-      console.error('刷新数据失败:', error);
-      showMessage('error', '刷新数据失败');
-    } finally {
-      setLoading(false);
+      setClearing(false);
     }
   };
 
@@ -127,13 +91,26 @@ export function SettingsPanel({ className = '', onConfigUpdate }: SettingsPanelP
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Claude Cookie
           </label>
-          <input
-            type="password"
-            placeholder="请输入Claude网站的Cookie"
-            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
-            value={config.cookie === '已设置' ? '' : config.cookie}
-            onChange={(e) => updateConfig('cookie', e.target.value)}
-          />
+          <div className="flex gap-2">
+            <input
+              type="password"
+              placeholder="请输入Claude网站的Cookie"
+              className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200 hover:border-gray-400"
+              value={config.cookie === '已设置' ? '' : config.cookie}
+              onChange={(e) => updateConfig('cookie', e.target.value)}
+            />
+            {config.cookie && config.cookie !== '' && (
+              <button
+                onClick={handleClearCookie}
+                disabled={clearing}
+                className="px-3 py-2.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500/20 disabled:opacity-50 transition-all duration-200 flex items-center"
+                title="清除Cookie"
+              >
+                <Trash2 className="w-4 h-4" />
+                {clearing && <span className="ml-1">...</span>}
+              </button>
+            )}
+          </div>
           {config.cookie === '已设置' && (
             <p className="text-sm text-green-600 mt-1.5 flex items-center">
               <svg className="w-4 h-4 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
@@ -191,43 +168,13 @@ export function SettingsPanel({ className = '', onConfigUpdate }: SettingsPanelP
           {/* 保存配置按钮 */}
           <button
             onClick={handleSaveConfig}
-            disabled={saving || loading}
+            disabled={saving}
             className="w-full flex items-center justify-center px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
           >
             <Save className="w-4 h-4 mr-2" />
             {saving ? '保存中...' : '保存配置'}
           </button>
 
-          {/* 控制按钮 */}
-          <div className="grid grid-cols-1 gap-3 @sm:grid-cols-2">
-            {taskRunning ? (
-              <button
-                onClick={handleStopTask}
-                disabled={loading}
-                className="flex items-center justify-center px-4 py-2.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500/20 disabled:opacity-50 transition-all duration-200"
-              >
-                <Square className="w-4 h-4 mr-2" />
-                {loading ? '停止中...' : '停止'}
-              </button>
-            ) : (
-              <button
-                onClick={handleStartTask}
-                disabled={loading || !config.cookie || config.cookie === ''}
-                className="flex items-center justify-center px-4 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500/20 disabled:opacity-50 transition-all duration-200"
-              >
-                <Play className="w-4 h-4 mr-2" />
-                {loading ? '启动中...' : '启动'}
-              </button>
-            )}
-
-            <button
-              onClick={handleRefreshData}
-              disabled={loading}
-              className="flex items-center justify-center px-4 py-2.5 bg-gray-600 text-white text-sm font-medium rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500/20 disabled:opacity-50 transition-all duration-200"
-            >
-              {loading ? '刷新中...' : '手动刷新'}
-            </button>
-          </div>
         </div>
 
         {/* 状态消息 - 优化视觉设计 */}

@@ -80,6 +80,43 @@ func (b *BadgerDB) GetConfig() (*models.UserConfig, error) {
 	return config, err
 }
 
+// ClearCookie 清除Cookie
+func (b *BadgerDB) ClearCookie() error {
+	return b.db.Update(func(txn *badger.Txn) error {
+		// 删除单独存储的cookie键
+		if err := txn.Delete([]byte("config:cookie")); err != nil && err != badger.ErrKeyNotFound {
+			return err
+		}
+
+		// 获取完整配置并更新
+		item, err := txn.Get([]byte("config:full"))
+		if err != nil {
+			if err == badger.ErrKeyNotFound {
+				return nil // 配置不存在，无需清理
+			}
+			return err
+		}
+
+		var config *models.UserConfig
+		err = item.Value(func(val []byte) error {
+			config = &models.UserConfig{}
+			return json.Unmarshal(val, config)
+		})
+		if err != nil {
+			return err
+		}
+
+		// 清除cookie并保存更新后的配置
+		config.Cookie = ""
+		data, err := json.Marshal(config)
+		if err != nil {
+			return err
+		}
+
+		return txn.Set([]byte("config:full"), data)
+	})
+}
+
 // SaveUsageData 保存积分使用数据
 func (b *BadgerDB) SaveUsageData(data []models.UsageData) error {
 	return b.db.Update(func(txn *badger.Txn) error {

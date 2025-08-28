@@ -222,6 +222,12 @@ export function Dashboard() {
 
   // 手动刷新数据
   const handleRefresh = async () => {
+    // 检查Cookie是否存在
+    if (!config?.cookie || config.cookie === '') {
+      console.warn('无法刷新数据：未配置Cookie');
+      return;
+    }
+
     try {
       await fetch('/api/refresh', { method: 'POST' });
       await loadHistoricalData();
@@ -236,7 +242,7 @@ export function Dashboard() {
       <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between p-4 md:p-6">
         {/* 左侧标题 */}
         <div className="text-white">
-          <h1 className="text-xl md:text-2xl font-bold">Claude Code 积分监控</h1>
+          <h1 className="text-xl md:text-2xl font-bold">Claude 积分监控</h1>
           <p className="text-sm text-white/70 mt-1">
             {lastUpdate ? `最后更新: ${lastUpdate.toLocaleTimeString()}` : '等待数据...'}
           </p>
@@ -277,8 +283,9 @@ export function Dashboard() {
           {/* 手动刷新按钮 */}
           <button
             onClick={handleRefresh}
-            className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-            title="手动刷新数据"
+            disabled={!config?.cookie || config.cookie === ''}
+            className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title={!config?.cookie || config.cookie === '' ? "请先配置Cookie" : "手动刷新数据"}
           >
             <RefreshCw className="w-5 h-5" />
           </button>

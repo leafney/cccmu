@@ -56,6 +56,13 @@ class APIClient {
     });
   }
 
+  // 清除Cookie
+  async clearCookie(): Promise<IAPIResponse> {
+    return this.request('/config/cookie', {
+      method: 'DELETE',
+    });
+  }
+
   // 创建SSE连接
   createSSEConnection(
     onMessage: (data: IUsageData[]) => void, 
