@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"io/fs"
 	"log"
 	"net/http"
@@ -20,6 +21,11 @@ import (
 )
 
 func main() {
+	// 解析命令行参数
+	var port string
+	flag.StringVar(&port, "port", "", "服务器端口号（例如: 8080 或 :8080）")
+	flag.Parse()
+
 	// 初始化数据库
 	db, err := database.NewBadgerDB("./.b")
 	if err != nil {
@@ -122,13 +128,13 @@ func main() {
 	})
 
 	// 启动服务器
-	port := getPort()
-	log.Printf("服务器启动在端口 %s", port)
-	log.Println("访问地址: http://localhost" + port)
+	serverPort := getPort(port)
+	log.Printf("服务器启动在端口 %s", serverPort)
+	log.Println("访问地址: http://localhost" + serverPort)
 
 	// 优雅关闭
 	go func() {
-		if err := app.Listen(port); err != nil {
+		if err := app.Listen(serverPort); err != nil {
 			log.Fatalf("服务器启动失败: %v", err)
 		}
 	}()
@@ -145,12 +151,23 @@ func main() {
 	log.Println("服务器已关闭")
 }
 
-// getPort 获取端口
-func getPort() string {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = ":8080"
+// getPort 获取端口，优先级：命令行参数 > 环境变量 > 默认端口
+func getPort(flagPort string) string {
+	var port string
+	
+	// 优先使用命令行参数
+	if flagPort != "" {
+		port = flagPort
+	} else {
+		// 其次使用环境变量
+		port = os.Getenv("PORT")
+		if port == "" {
+			// 最后使用默认端口
+			port = ":8080"
+		}
 	}
+	
+	// 确保端口格式正确（以冒号开头）
 	if port[0] != ':' {
 		port = ":" + port
 	}
