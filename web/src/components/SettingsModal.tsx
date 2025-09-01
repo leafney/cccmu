@@ -14,7 +14,8 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate }: SettingsModal
     cookie: '',
     interval: 1,
     timeRange: 60,
-    enabled: false
+    enabled: false,
+    cookieValidationInterval: 10
   });
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -185,6 +186,27 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate }: SettingsModal
                 <option value={720}>12小时</option>
                 <option value={1440}>24小时</option>
               </select>
+            </div>
+
+            {/* Cookie验证间隔 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Cookie验证间隔 (分钟)
+              </label>
+              <select
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200 bg-white"
+                value={config.cookieValidationInterval}
+                onChange={(e) => updateConfig('cookieValidationInterval', parseInt(e.target.value))}
+              >
+                <option value={5}>5分钟</option>
+                <option value={10}>10分钟</option>
+                <option value={15}>15分钟</option>
+                <option value={30}>30分钟</option>
+                <option value={60}>1小时</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
+                系统会智能判断是否需要验证Cookie，只有超过设定间隔且未进行其他API请求时才会验证
+              </p>
             </div>
 
             {/* 操作按钮 */}

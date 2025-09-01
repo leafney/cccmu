@@ -51,17 +51,22 @@ Claude Code积分使用量监控系统，通过SSE方式实时展示积分使用
 - [ ] API响应模型 (`models/response.go`)
 
 ### ✅ 任务 2.4 业务逻辑层
-- [ ] 积分数据服务 (`services/usage.go`)
+- [x] 积分数据服务 (`services/usage.go`)
   - 数据获取和处理
   - 时间格式转换
   - 数据过滤逻辑
-- [ ] 配置管理服务 (`services/config.go`)
+- [x] 配置管理服务 (`services/config.go`)
   - Cookie管理
   - 用户设置管理
-- [ ] 任务调度服务 (`services/scheduler.go`)
+- [x] 任务调度服务 (`services/scheduler.go`)
   - 定时积分数据获取
   - Cookie有效性验证
   - 使用gocron/v2实现
+  - **智能Cookie验证机制**：
+    - 基于时间戳的验证策略
+    - API成功请求自动更新验证时间
+    - 可配置验证间隔（默认10分钟）
+    - Cookie失效自动停止任务并清理状态
 
 ### ✅ 任务 2.5 API接口层
 - [ ] SSE接口 (`handlers/sse.go`)
@@ -170,25 +175,59 @@ Claude Code积分使用量监控系统，通过SSE方式实时展示积分使用
 
 ---
 
+## 新增功能特性（Cookie验证优化）
+
+### ✅ 任务 5.1 Cookie智能验证机制
+- [x] **数据模型扩展**：
+  - 添加`LastCookieValidTime`字段记录最后验证成功时间
+  - 添加`CookieValidationInterval`字段配置验证间隔
+- [x] **数据库操作扩展**：
+  - 实现`UpdateCookieValidTime()`方法
+  - 实现`ShouldValidateCookie()`智能判断逻辑
+- [x] **API客户端优化**：
+  - 集成回调机制，成功请求自动更新验证时间戳
+  - `FetchUsageData`、`FetchCreditBalance`、`ValidateCookie`自动触发回调
+- [x] **调度器服务增强**：
+  - 新增独立的Cookie验证定时任务
+  - 实现`validateCookieIfNeeded()`智能验证逻辑
+  - 实现`handleCookieValidationFailure()`失败处理机制
+  - Cookie失效时自动停止任务、清理状态、禁用配置
+
+### ✅ 任务 5.2 性能和体验优化
+- [x] **减少API调用频次**：
+  - 只有超过验证间隔时间才进行Cookie验证
+  - 避免频繁的验证请求影响API配额
+- [x] **智能失败恢复**：
+  - Cookie失效时自动清理无效状态
+  - 用户只需重新配置Cookie即可快速恢复
+- [x] **详细日志记录**：
+  - Cookie验证过程的详细日志
+  - 失败处理流程的状态跟踪
+
+---
+
 ## 开发优先级
 
-### 高优先级 (核心功能)
+### 高优先级 (核心功能) ✅
 1. 后端API客户端和数据获取
 2. SSE数据推送机制
 3. 前端图表展示组件
 4. Cookie管理和验证
+5. **Cookie智能验证机制（新增）**
 
-### 中优先级 (重要功能)
+### 中优先级 (重要功能) ✅
 1. 定时任务调度
 2. 用户配置管理
 3. 时间范围选择
 4. 多模型对比
+5. 积分余额显示功能
 
 ### 低优先级 (优化功能)
 1. 用户界面美化
 2. 错误处理完善
 3. 性能优化
 4. 部署文档
+5. 前端Cookie验证间隔配置界面（待实现）
 
 ---
 

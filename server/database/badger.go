@@ -42,10 +42,12 @@ func (b *BadgerDB) SaveConfig(config *models.UserConfig) error {
 
 		// 保存各个配置项
 		configs := map[string]interface{}{
-			"config:cookie":    config.Cookie,
-			"config:interval":  config.Interval,
-			"config:timerange": config.TimeRange,
-			"config:enabled":   config.Enabled,
+			"config:cookie":                   config.Cookie,
+			"config:interval":                 config.Interval,
+			"config:timerange":                config.TimeRange,
+			"config:enabled":                  config.Enabled,
+			"config:lastcookievalidtime":      config.LastCookieValidTime,
+			"config:cookievalidationinterval": config.CookieValidationInterval,
 		}
 
 		for key, value := range configs {
@@ -224,4 +226,45 @@ func (b *BadgerDB) CleanOldData(keepHours int) error {
 
 		return nil
 	})
+}
+
+// UpdateCookieValidTime 更新Cookie验证成功时间
+func (b *BadgerDB) UpdateCookieValidTime() error {
+	return b.db.Update(func(txn *badger.Txn) error {
+		// 获取现有配置
+		config, err := b.GetConfig()
+		if err != nil {
+			return fmt.Errorf("获取配置失败: %w", err)
+		}
+
+		// 更新Cookie验证时间为当前时间
+		config.LastCookieValidTime = time.Now()
+
+		// 保存更新后的配置
+		return b.SaveConfig(config)
+	})
+}
+
+// ShouldValidateCookie 检查是否需要验证Cookie
+func (b *BadgerDB) ShouldValidateCookie() (bool, error) {
+	config, err := b.GetConfig()
+	if err != nil {
+		return false, fmt.Errorf("获取配置失败: %w", err)
+	}
+
+	// 如果Cookie为空，不需要验证
+	if config.Cookie == "" {
+		return false, nil
+	}
+
+	// 如果从未验证过，需要验证
+	if config.LastCookieValidTime.IsZero() {
+		return true, nil
+	}
+
+	// 检查是否超过了验证间隔时间
+	elapsed := time.Since(config.LastCookieValidTime)
+	threshold := time.Duration(config.CookieValidationInterval) * time.Minute
+	
+	return elapsed > threshold, nil
 }

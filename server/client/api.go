@@ -9,10 +9,14 @@ import (
 	"github.com/leafney/cccmu/server/models"
 )
 
+// CookieUpdateCallback Cookie更新回调函数类型
+type CookieUpdateCallback func()
+
 // ClaudeAPIClient Claude API客户端
 type ClaudeAPIClient struct {
-	client *resty.Client
-	cookie string
+	client               *resty.Client
+	cookie               string
+	cookieUpdateCallback CookieUpdateCallback
 }
 
 // NewClaudeAPIClient 创建新的Claude API客户端
@@ -25,14 +29,27 @@ func NewClaudeAPIClient(cookie string) *ClaudeAPIClient {
 		SetDebug(false) // 开启调试模式
 
 	return &ClaudeAPIClient{
-		client: client,
-		cookie: cookie,
+		client:               client,
+		cookie:               cookie,
+		cookieUpdateCallback: nil,
 	}
+}
+
+// SetCookieUpdateCallback 设置Cookie更新回调
+func (c *ClaudeAPIClient) SetCookieUpdateCallback(callback CookieUpdateCallback) {
+	c.cookieUpdateCallback = callback
 }
 
 // UpdateCookie 更新Cookie
 func (c *ClaudeAPIClient) UpdateCookie(cookie string) {
 	c.cookie = cookie
+}
+
+// notifySuccessfulRequest 通知成功请求，更新Cookie验证时间戳
+func (c *ClaudeAPIClient) notifySuccessfulRequest() {
+	if c.cookieUpdateCallback != nil {
+		c.cookieUpdateCallback()
+	}
 }
 
 // ClaudeUsageResponse Claude使用量API响应
@@ -76,6 +93,9 @@ func (c *ClaudeAPIClient) FetchUsageData() ([]models.UsageData, error) {
 	if err := json.Unmarshal(resp.Body(), &apiResp); err != nil {
 		return nil, fmt.Errorf("解析响应失败: %w", err)
 	}
+
+	// 通知成功请求，更新Cookie验证时间戳
+	c.notifySuccessfulRequest()
 
 	return c.convertToUsageData(apiResp), nil
 }
@@ -128,6 +148,9 @@ func (c *ClaudeAPIClient) FetchCreditBalance() (*models.CreditBalance, error) {
 		remaining = 0
 	}
 
+	// 通知成功请求，更新Cookie验证时间戳
+	c.notifySuccessfulRequest()
+
 	return &models.CreditBalance{
 		Remaining: remaining,
 		UpdatedAt: time.Now(),
@@ -158,6 +181,10 @@ func (c *ClaudeAPIClient) ValidateCookie() error {
 	if resp.StatusCode() != 200 {
 		return fmt.Errorf("Cookie验证失败: %d %s", resp.StatusCode(), resp.Status())
 	}
+
+	// 通知成功请求，更新Cookie验证时间戳
+	c.notifySuccessfulRequest()
+	
 	return nil
 }
 
