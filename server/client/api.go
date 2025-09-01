@@ -80,6 +80,60 @@ func (c *ClaudeAPIClient) FetchUsageData() ([]models.UsageData, error) {
 	return c.convertToUsageData(apiResp), nil
 }
 
+// FetchCreditBalance 获取积分余额
+func (c *ClaudeAPIClient) FetchCreditBalance() (*models.CreditBalance, error) {
+	if c.cookie == "" {
+		return nil, fmt.Errorf("Cookie为空")
+	}
+
+	resp, err := c.client.R().
+		SetHeader("Cookie", c.cookie).
+		SetHeader("Referer", "https://www.aicodemirror.com/dashboard/usage").
+		SetHeader("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36").
+		SetHeader("Accept", "application/json, text/plain, */*").
+		Get("https://www.aicodemirror.com/api/user/usage/chart")
+
+	if err != nil {
+		return nil, fmt.Errorf("获取积分余额请求失败: %w", err)
+	}
+
+	if resp.StatusCode() != 200 {
+		return nil, fmt.Errorf("获取积分余额失败: %d %s", resp.StatusCode(), resp.Status())
+	}
+
+	// 解析API返回的数据格式
+	var response struct {
+		ChartData []models.CreditChartData `json:"chartData"`
+	}
+	if err := json.Unmarshal(resp.Body(), &response); err != nil {
+		return nil, fmt.Errorf("解析积分数据失败: %w", err)
+	}
+	
+	chartData := response.ChartData
+
+	// 计算剩余积分
+	totalConsumed := 0
+	totalAdded := 0
+	
+	for _, data := range chartData {
+		totalConsumed += data.Consumed
+		totalAdded += data.Added
+	}
+	
+	// 使用8000减去差值的绝对值
+	diff := totalAdded - totalConsumed
+	remaining := 8000 - abs(diff)
+	
+	if remaining < 0 {
+		remaining = 0
+	}
+
+	return &models.CreditBalance{
+		Remaining: remaining,
+		UpdatedAt: time.Now(),
+	}, nil
+}
+
 // ValidateCookie 验证Cookie有效性
 func (c *ClaudeAPIClient) ValidateCookie() error {
 	if c.cookie == "" {
@@ -133,4 +187,12 @@ func (c *ClaudeAPIClient) convertToUsageData(apiData []ClaudeUsageData) []models
 	}
 
 	return usageData
+}
+
+// abs 返回整数的绝对值
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }

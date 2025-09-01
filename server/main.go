@@ -82,6 +82,10 @@ func main() {
 		api.Get("/control/status", controlHandler.GetTaskStatus)
 		api.Post("/refresh", controlHandler.RefreshData)
 
+		// 积分余额相关
+		api.Get("/balance", controlHandler.GetCreditBalance)
+		api.Post("/balance/refresh", controlHandler.RefreshBalance)
+
 		// 数据相关
 		api.Get("/usage/stream", sseHandler.StreamUsageData)
 		api.Get("/usage/data", sseHandler.GetUsageData)
