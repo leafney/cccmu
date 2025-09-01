@@ -1,4 +1,4 @@
-import type { IUserConfig, IAPIResponse, IUsageData } from '../types';
+import type { IUserConfig, IAPIResponse, IUsageData, ICreditBalance } from '../types';
 
 const API_BASE = '/api';
 
@@ -60,6 +60,18 @@ class APIClient {
   async clearCookie(): Promise<IAPIResponse> {
     return this.request('/config/cookie', {
       method: 'DELETE',
+    });
+  }
+
+  // 获取积分余额
+  async getCreditBalance(): Promise<IAPIResponse<ICreditBalance>> {
+    return this.request<ICreditBalance>('/balance');
+  }
+
+  // 手动刷新积分余额
+  async refreshBalance(): Promise<IAPIResponse> {
+    return this.request('/balance/refresh', {
+      method: 'POST',
     });
   }
 

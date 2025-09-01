@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { UsageChart } from '../components/UsageChart';
 import { SettingsModal } from '../components/SettingsModal';
-import type { IUsageData, IUserConfig } from '../types';
+import type { IUsageData, IUserConfig, ICreditBalance } from '../types';
 import { apiClient } from '../api/client';
 import { Settings, Wifi, WifiOff, RefreshCw } from 'lucide-react';
 
@@ -13,6 +13,7 @@ export function Dashboard() {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [eventSource, setEventSource] = useState<EventSource | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [creditBalance, setCreditBalance] = useState<ICreditBalance | null>(null);
   const retryTimeoutRef = useRef<number | null>(null);
 
   // 建立SSE连接
@@ -59,6 +60,18 @@ export function Dashboard() {
     setEventSource(newEventSource);
   }, [config?.timeRange]);
 
+  // 获取积分余额
+  const loadCreditBalance = useCallback(async () => {
+    try {
+      const response = await apiClient.getCreditBalance();
+      if (response.data) {
+        setCreditBalance(response.data);
+      }
+    } catch (error) {
+      console.error('获取积分余额失败:', error);
+    }
+  }, []);
+
   // 加载初始配置和任务状态
   useEffect(() => {
     const loadConfigAndStatus = async () => {
@@ -75,13 +88,16 @@ export function Dashboard() {
         if (statusResult.data) {
           setIsMonitoring(statusResult.data.running);
         }
+
+        // 加载积分余额
+        await loadCreditBalance();
       } catch (error) {
         console.error('加载配置和状态失败:', error);
       }
     };
 
     loadConfigAndStatus();
-  }, []);
+  }, [loadCreditBalance]);
 
   // 配置更新后重新连接SSE - 只在timeRange变化时重连
   useEffect(() => {
@@ -143,6 +159,17 @@ export function Dashboard() {
       loadHistoricalData();
     }
   }, [config, loadHistoricalData]);
+
+  // 定时刷新积分余额
+  useEffect(() => {
+    if (config?.cookie && config.enabled) {
+      const interval = setInterval(() => {
+        loadCreditBalance();
+      }, 2 * 60 * 1000); // 每2分钟刷新一次积分余额
+
+      return () => clearInterval(interval);
+    }
+  }, [config?.cookie, config?.enabled, loadCreditBalance]);
 
   const toggleMonitoring = async () => {
     try {
@@ -229,8 +256,16 @@ export function Dashboard() {
     }
 
     try {
-      await fetch('/api/refresh', { method: 'POST' });
-      await loadHistoricalData();
+      // 同时刷新使用数据和积分余额
+      await Promise.all([
+        fetch('/api/refresh', { method: 'POST' }),
+        apiClient.refreshBalance()
+      ]);
+      
+      await Promise.all([
+        loadHistoricalData(),
+        loadCreditBalance()
+      ]);
     } catch (error) {
       console.error('手动刷新失败:', error);
     }
@@ -250,6 +285,15 @@ export function Dashboard() {
 
         {/* 右侧控制区 */}
         <div className="flex items-center space-x-4">
+          {/* 积分余额显示 */}
+          {creditBalance && (
+            <div className="text-white bg-white/10 px-3 py-1 rounded-lg backdrop-blur-sm">
+              <div className="text-xs text-white/70">剩余积分约为</div>
+              <div className="text-sm font-mono font-bold text-yellow-400">
+                {creditBalance.remaining.toLocaleString()}
+              </div>
+            </div>
+          )}
           {/* 连接状态指示 */}
           <div className="flex items-center space-x-2">
             {isConnected ? (

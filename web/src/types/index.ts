@@ -44,3 +44,9 @@ export interface IChartDataPoint {
   creditsUsed: number;
   model: string;
 }
+
+// 积分余额信息
+export interface ICreditBalance {
+  remaining: number;
+  updatedAt: string;
+}
