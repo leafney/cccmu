@@ -63,10 +63,22 @@ func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
 			w.Flush()
 		}
 
+		// 立即发送当前积分余额
+		balance := h.scheduler.GetLatestBalance()
+		if balance != nil {
+			jsonData, err := json.Marshal(balance)
+			if err == nil {
+				fmt.Fprintf(w, "event: balance\ndata: %s\n\n", jsonData)
+				w.Flush()
+			}
+		}
+
 		// 添加数据监听器
 		listener := h.scheduler.AddDataListener()
+		balanceListener := h.scheduler.AddBalanceListener()
 		defer func() {
 			h.scheduler.RemoveDataListener(listener)
+			h.scheduler.RemoveBalanceListener(balanceListener)
 		}()
 
 		// 设置连接保活
@@ -93,6 +105,21 @@ func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
 					if err := w.Flush(); err != nil {
 						return
 					}
+				}
+
+			case balance, ok := <-balanceListener:
+				if !ok {
+					return // 监听器已关闭
+				}
+
+				// 发送积分余额数据
+				jsonData, err := json.Marshal(balance)
+				if err != nil {
+					continue
+				}
+				fmt.Fprintf(w, "event: balance\ndata: %s\n\n", jsonData)
+				if err := w.Flush(); err != nil {
+					return
 				}
 
 			case <-ticker.C:

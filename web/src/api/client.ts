@@ -78,6 +78,7 @@ class APIClient {
   // 创建SSE连接
   createSSEConnection(
     onMessage: (data: IUsageData[]) => void, 
+    onBalanceUpdate?: (balance: ICreditBalance) => void,
     onError?: (error: Event) => void, 
     onOpen?: () => void,
     timeRange: number = 60
@@ -94,6 +95,17 @@ class APIClient {
         onMessage(data);
       } catch (error) {
         console.error('解析SSE数据失败:', error, event.data);
+      }
+    });
+
+    eventSource.addEventListener('balance', (event) => {
+      try {
+        const balance = JSON.parse(event.data);
+        if (onBalanceUpdate) {
+          onBalanceUpdate(balance);
+        }
+      } catch (error) {
+        console.error('解析积分余额数据失败:', error, event.data);
       }
     });
 

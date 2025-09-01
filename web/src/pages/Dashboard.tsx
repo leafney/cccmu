@@ -42,6 +42,9 @@ export function Dashboard() {
         // 收到数据时确保连接状态为已连接
         setIsConnected(true);
       },
+      (balance: ICreditBalance) => {
+        setCreditBalance(balance);
+      },
       (error: Event) => {
         console.error('SSE连接错误:', error);
         setIsConnected(false);
@@ -160,16 +163,6 @@ export function Dashboard() {
     }
   }, [config, loadHistoricalData]);
 
-  // 定时刷新积分余额
-  useEffect(() => {
-    if (config?.cookie && config.enabled) {
-      const interval = setInterval(() => {
-        loadCreditBalance();
-      }, 2 * 60 * 1000); // 每2分钟刷新一次积分余额
-
-      return () => clearInterval(interval);
-    }
-  }, [config?.cookie, config?.enabled, loadCreditBalance]);
 
   const toggleMonitoring = async () => {
     try {
