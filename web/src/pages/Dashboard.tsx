@@ -281,7 +281,7 @@ export function Dashboard() {
           {/* 积分余额显示 */}
           {creditBalance && (
             <div className="text-white bg-white/10 px-3 py-1 rounded-lg backdrop-blur-sm">
-              <div className="text-xs text-white/70">剩余积分约为</div>
+              <div className="text-xs text-white/70">剩余积分约</div>
               <div className="text-sm font-mono font-bold text-yellow-400">
                 {creditBalance.remaining.toLocaleString()}
               </div>

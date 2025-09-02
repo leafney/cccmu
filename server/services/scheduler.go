@@ -52,12 +52,6 @@ func NewSchedulerService(db *database.BadgerDB) (*SchedulerService, error) {
 		balanceListeners: make([]chan *models.CreditBalance, 0),
 	}
 
-	// 设置API客户端的Cookie更新回调
-	apiClient.SetCookieUpdateCallback(func() {
-		if err := db.UpdateCookieValidTime(); err != nil {
-			log.Printf("更新Cookie验证时间失败: %v", err)
-		}
-	})
 
 	return service, nil
 }
@@ -86,9 +80,9 @@ func (s *SchedulerService) Start() error {
 		return fmt.Errorf("Cookie未设置")
 	}
 
-	// 验证Cookie
+	// 验证Cookie（通过获取积分余额隐式验证）
 	s.apiClient.UpdateCookie(s.config.Cookie)
-	if err := s.apiClient.ValidateCookie(); err != nil {
+	if _, err := s.apiClient.FetchCreditBalance(); err != nil {
 		return fmt.Errorf("Cookie验证失败: %w", err)
 	}
 
@@ -118,20 +112,6 @@ func (s *SchedulerService) Start() error {
 	log.Printf("使用数据定时任务创建成功，任务ID: %v，间隔: %d分钟", usageJob.ID(), s.config.Interval)
 	log.Printf("积分余额定时任务创建成功，任务ID: %v，间隔: %d分钟", balanceJob.ID(), s.config.Interval)
 
-	// 添加Cookie验证定时任务
-	cookieValidationJob, err := s.scheduler.NewJob(
-		gocron.DurationJob(time.Duration(s.config.CookieValidationInterval)*time.Minute),
-		gocron.NewTask(s.validateCookieIfNeeded),
-		gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		gocron.WithStartAt(
-			gocron.WithStartDateTime(time.Now().Add(1*time.Minute)), // 1分钟后开始执行
-		),
-	)
-	if err != nil {
-		return fmt.Errorf("创建Cookie验证定时任务失败: %w", err)
-	}
-
-	log.Printf("Cookie验证定时任务创建成功，任务ID: %v，间隔: %d分钟", cookieValidationJob.ID(), s.config.CookieValidationInterval)
 
 	// 启动调度器
 	s.scheduler.Start()
@@ -218,12 +198,6 @@ func (s *SchedulerService) UpdateConfig(newConfig *models.UserConfig) error {
 	s.config = newConfig
 	s.apiClient.UpdateCookie(newConfig.Cookie)
 	
-	// 重新设置Cookie更新回调
-	s.apiClient.SetCookieUpdateCallback(func() {
-		if err := s.db.UpdateCookieValidTime(); err != nil {
-			log.Printf("更新Cookie验证时间失败: %v", err)
-		}
-	})
 
 	// 如果新配置启用且之前在运行，重新启动
 	if newConfig.Enabled && wasRunning {
@@ -239,8 +213,8 @@ func (s *SchedulerService) startWithoutLock() error {
 		return fmt.Errorf("Cookie未设置")
 	}
 
-	// 验证Cookie
-	if err := s.apiClient.ValidateCookie(); err != nil {
+	// 验证Cookie（通过获取积分余额隐式验证）
+	if _, err := s.apiClient.FetchCreditBalance(); err != nil {
 		return fmt.Errorf("Cookie验证失败: %w", err)
 	}
 
@@ -277,20 +251,6 @@ func (s *SchedulerService) startWithoutLock() error {
 	log.Printf("使用数据定时任务重建成功，任务ID: %v，间隔: %d分钟", usageJob.ID(), s.config.Interval)
 	log.Printf("积分余额定时任务重建成功，任务ID: %v，间隔: %d分钟", balanceJob.ID(), s.config.Interval)
 
-	// 添加Cookie验证定时任务
-	cookieValidationJob, err := s.scheduler.NewJob(
-		gocron.DurationJob(time.Duration(s.config.CookieValidationInterval)*time.Minute),
-		gocron.NewTask(s.validateCookieIfNeeded),
-		gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		gocron.WithStartAt(
-			gocron.WithStartDateTime(time.Now().Add(1*time.Minute)), // 1分钟后开始执行
-		),
-	)
-	if err != nil {
-		return fmt.Errorf("重建Cookie验证定时任务失败: %w", err)
-	}
-
-	log.Printf("Cookie验证定时任务重建成功，任务ID: %v，间隔: %d分钟", cookieValidationJob.ID(), s.config.CookieValidationInterval)
 
 	s.scheduler.Start()
 	s.isRunning = true
@@ -461,88 +421,7 @@ func (s *SchedulerService) notifyBalanceListeners(balance *models.CreditBalance)
 	}
 }
 
-// validateCookieIfNeeded 根据时间戳判断是否需要验证Cookie
-func (s *SchedulerService) validateCookieIfNeeded() error {
-	shouldValidate, err := s.db.ShouldValidateCookie()
-	if err != nil {
-		log.Printf("检查Cookie验证需求失败: %v", err)
-		return err
-	}
 
-	if !shouldValidate {
-		log.Println("Cookie验证: 无需验证，跳过")
-		return nil
-	}
-
-	log.Println("Cookie验证: 开始验证Cookie有效性")
-	
-	// 更新配置，确保使用最新的Cookie
-	config, err := s.db.GetConfig()
-	if err != nil {
-		log.Printf("获取配置失败: %v", err)
-		return err
-	}
-	
-	if config.Cookie == "" {
-		log.Println("Cookie验证: Cookie为空，跳过验证")
-		return nil
-	}
-
-	s.apiClient.UpdateCookie(config.Cookie)
-	
-	// 执行Cookie验证
-	if err := s.apiClient.ValidateCookie(); err != nil {
-		log.Printf("Cookie验证失败: %v", err)
-		// 这里将在下一个任务中实现失败处理逻辑
-		return s.handleCookieValidationFailure(err)
-	}
-
-	log.Println("Cookie验证: 验证成功")
-	return nil
-}
-
-// handleCookieValidationFailure 处理Cookie验证失败
-func (s *SchedulerService) handleCookieValidationFailure(err error) error {
-	log.Printf("Cookie验证失败，开始执行失败处理流程: %v", err)
-	
-	// 1. 停止当前的定时任务
-	s.mu.Lock()
-	if s.isRunning {
-		log.Println("Cookie失效: 停止所有定时任务")
-		if stopErr := s.scheduler.StopJobs(); stopErr != nil {
-			log.Printf("停止定时任务失败: %v", stopErr)
-		}
-		s.isRunning = false
-	}
-	s.mu.Unlock()
-
-	// 2. 获取当前配置
-	config, configErr := s.db.GetConfig()
-	if configErr != nil {
-		log.Printf("获取配置失败: %v", configErr)
-		config = models.GetDefaultConfig()
-	}
-
-	// 3. 清除Cookie并禁用任务
-	config.Cookie = ""
-	config.Enabled = false
-	config.LastCookieValidTime = time.Now() // 记录失败时间
-
-	// 4. 保存更新后的配置
-	if saveErr := s.db.SaveConfig(config); saveErr != nil {
-		log.Printf("保存配置失败: %v", saveErr)
-	} else {
-		log.Println("Cookie失效: 已清除Cookie并禁用任务")
-	}
-
-	// 5. 更新内存中的配置
-	s.mu.Lock()
-	s.config = config
-	s.mu.Unlock()
-
-	log.Println("Cookie失效处理完成，用户需要重新配置Cookie并启用任务")
-	return fmt.Errorf("Cookie已失效，任务已停止，请重新配置Cookie: %w", err)
-}
 
 // Shutdown 关闭服务
 func (s *SchedulerService) Shutdown() {

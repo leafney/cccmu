@@ -10,12 +10,23 @@ BUILD_DIR=dist
 .PHONY: help
 help:
 	@echo "可用的命令:"
+	@echo ""
+	@echo "开发相关:"
 	@echo "  dev-frontend    - 启动前端开发服务器"
 	@echo "  dev-backend     - 启动后端开发服务器"
 	@echo "  dev            - 同时启动前后端开发环境"
+	@echo ""
+	@echo "构建相关:"
 	@echo "  build-frontend - 构建前端生产版本"
 	@echo "  build-backend  - 编译后端二进制文件"
 	@echo "  build          - 完整构建项目"
+	@echo ""
+	@echo "运行相关:"
+	@echo "  run            - 运行应用（默认端口8080）"
+	@echo "  run-debug      - 运行应用并开启调试日志"
+	@echo "  run-port       - 运行应用（端口9090 + 调试日志）"
+	@echo ""
+	@echo "工具相关:"
 	@echo "  clean          - 清理构建文件"
 	@echo "  test           - 运行测试"
 	@echo "  fmt            - 格式化代码"
@@ -54,6 +65,22 @@ build-backend: build-frontend
 .PHONY: build
 build: build-backend
 	@echo "构建完成: $(BINARY_NAME)"
+
+# 运行相关
+.PHONY: run
+run:
+	@echo "启动应用..."
+	./$(BINARY_NAME)
+
+.PHONY: run-debug
+run-debug:
+	@echo "启动应用（开启调试日志）..."
+	./$(BINARY_NAME) --log
+
+.PHONY: run-port
+run-port:
+	@echo "启动应用（自定义端口9090）..."
+	./$(BINARY_NAME) --port 9090 --log
 
 # 工具命令
 .PHONY: clean

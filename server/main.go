@@ -17,14 +17,20 @@ import (
 	"github.com/leafney/cccmu/server/database"
 	"github.com/leafney/cccmu/server/handlers"
 	"github.com/leafney/cccmu/server/services"
+	"github.com/leafney/cccmu/server/utils"
 	"github.com/leafney/cccmu/server/web"
 )
 
 func main() {
 	// 解析命令行参数
 	var port string
+	var enableLog bool
 	flag.StringVar(&port, "port", "", "服务器端口号（例如: 8080 或 :8080）")
+	flag.BoolVar(&enableLog, "log", false, "启用详细日志输出")
 	flag.Parse()
+
+	// 初始化日志系统
+	utils.InitLogger(enableLog)
 
 	// 初始化数据库
 	db, err := database.NewBadgerDB("./.b")

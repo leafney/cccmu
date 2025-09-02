@@ -15,7 +15,6 @@ export interface IUserConfig {
   interval: number;                  // 分钟
   timeRange: number;                 // 小时
   enabled: boolean;
-  cookieValidationInterval: number;  // Cookie验证间隔(分钟)
 }
 
 // API响应格式

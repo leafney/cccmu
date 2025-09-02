@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-resty/resty/v2"
 	"github.com/leafney/cccmu/server/models"
+	"github.com/leafney/cccmu/server/utils"
 )
 
 // CookieUpdateCallback Cookie更新回调函数类型
@@ -85,6 +86,10 @@ func (c *ClaudeAPIClient) FetchUsageData() ([]models.UsageData, error) {
 		return nil, fmt.Errorf("API请求失败: %w", err)
 	}
 
+	if resp.StatusCode() == 401 {
+		return nil, fmt.Errorf("Cookie无效或已过期")
+	}
+
 	if resp.StatusCode() != 200 {
 		return nil, fmt.Errorf("API返回错误: %d %s", resp.StatusCode(), resp.Status())
 	}
@@ -117,9 +122,16 @@ func (c *ClaudeAPIClient) FetchCreditBalance() (*models.CreditBalance, error) {
 		return nil, fmt.Errorf("获取积分余额请求失败: %w", err)
 	}
 
+	if resp.StatusCode() == 401 {
+		return nil, fmt.Errorf("Cookie无效或已过期")
+	}
+
 	if resp.StatusCode() != 200 {
 		return nil, fmt.Errorf("获取积分余额失败: %d %s", resp.StatusCode(), resp.Status())
 	}
+
+	// 添加调试日志（可控制）
+	utils.Logf("积分余额API原始响应: %s", string(resp.Body()))
 
 	// 解析API返回的数据格式
 	var response struct {
@@ -128,25 +140,41 @@ func (c *ClaudeAPIClient) FetchCreditBalance() (*models.CreditBalance, error) {
 	if err := json.Unmarshal(resp.Body(), &response); err != nil {
 		return nil, fmt.Errorf("解析积分数据失败: %w", err)
 	}
-	
+
 	chartData := response.ChartData
+
+	// 添加调试日志（可控制）
+	utils.Logf("积分余额API返回数据条数: %d", len(chartData))
 
 	// 计算剩余积分
 	totalConsumed := 0
 	totalAdded := 0
-	
+
 	for _, data := range chartData {
 		totalConsumed += data.Consumed
 		totalAdded += data.Added
+		utils.Logf("时间段: %s, 消耗: %d, 增加: %d", data.Hour, data.Consumed, data.Added)
 	}
-	
-	// 使用8000减去差值的绝对值
+
+	utils.Logf("总消耗: %d, 总增加: %d", totalConsumed, totalAdded)
+
+	// 修正积分余额计算逻辑
 	diff := totalAdded - totalConsumed
-	remaining := 8000 - abs(diff)
+	var remaining int
 	
+	if diff >= 0 {
+		// 增加的积分 >= 消耗的积分，基础8000 + 差值
+		remaining = 8000 + diff
+	} else {
+		// 消耗的积分 > 增加的积分，基础8000 - 差值的绝对值
+		remaining = 8000 + diff // diff是负数，所以相当于8000 - abs(diff)
+	}
+
 	if remaining < 0 {
 		remaining = 0
 	}
+
+	utils.Logf("计算结果 - 差值: %d, 剩余积分: %d", diff, remaining)
 
 	// 通知成功请求，更新Cookie验证时间戳
 	c.notifySuccessfulRequest()
@@ -157,36 +185,6 @@ func (c *ClaudeAPIClient) FetchCreditBalance() (*models.CreditBalance, error) {
 	}, nil
 }
 
-// ValidateCookie 验证Cookie有效性
-func (c *ClaudeAPIClient) ValidateCookie() error {
-	if c.cookie == "" {
-		return fmt.Errorf("Cookie为空")
-	}
-
-	resp, err := c.client.R().
-		SetHeader("Cookie", c.cookie).
-		SetHeader("Referer", "https://www.aicodemirror.com/dashboard/usage").
-		SetHeader("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36").
-		SetHeader("Accept", "application/json, text/plain, */*").
-		Get("https://www.aicodemirror.com/api/user/usage/chart")
-
-	if err != nil {
-		return fmt.Errorf("Cookie验证请求失败: %w", err)
-	}
-
-	if resp.StatusCode() == 401 {
-		return fmt.Errorf("Cookie无效或已过期")
-	}
-
-	if resp.StatusCode() != 200 {
-		return fmt.Errorf("Cookie验证失败: %d %s", resp.StatusCode(), resp.Status())
-	}
-
-	// 通知成功请求，更新Cookie验证时间戳
-	c.notifySuccessfulRequest()
-	
-	return nil
-}
 
 // convertToUsageData 转换API数据为内部数据格式
 func (c *ClaudeAPIClient) convertToUsageData(apiData []ClaudeUsageData) []models.UsageData {
@@ -216,10 +214,3 @@ func (c *ClaudeAPIClient) convertToUsageData(apiData []ClaudeUsageData) []models
 	return usageData
 }
 
-// abs 返回整数的绝对值
-func abs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
-}
