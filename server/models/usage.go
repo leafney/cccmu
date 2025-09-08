@@ -16,12 +16,6 @@ type UsageData struct {
 // UsageDataList 积分使用数据列表
 type UsageDataList []UsageData
 
-// CreditChartData 积分图表数据
-type CreditChartData struct {
-	Hour     string `json:"hour"`
-	Consumed int    `json:"consumed"`
-	Added    int    `json:"added"`
-}
 
 // CreditBalance 积分余额信息
 type CreditBalance struct {

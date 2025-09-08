@@ -79,3 +79,18 @@
   - 例如：当cookie值失效后，响应状态码为 401，响应内容为 `{"error":"Unauthorized"}`
 
 ---
+
+## 获取剩余可用积分
+
+- 接口地址：https://www.aicodemirror.com/api/user/credits
+- 接口方法：GET
+- 请求参数：
+  - cookie：用户在前端设置页面中添加的cookie信息
+  - referer：https://www.aicodemirror.com/dashboard/usage
+  - user-agent：Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36
+  - accept：application/json, text/plain, */*
+- 响应参数：
+  - code：响应状态码，200表示成功，其他值表示失败
+  - data：响应数据，示例为 `{"userId":1017827,"email":null,"credits":7739,"plan":"PRO"}`
+
+---

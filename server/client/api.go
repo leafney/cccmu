@@ -105,6 +105,14 @@ func (c *ClaudeAPIClient) FetchUsageData() ([]models.UsageData, error) {
 	return c.convertToUsageData(apiResp), nil
 }
 
+// ClaudeCreditsResponse Claude积分API响应
+type ClaudeCreditsResponse struct {
+	UserID  int    `json:"userId"`
+	Email   string `json:"email"`
+	Credits int    `json:"credits"`
+	Plan    string `json:"plan"`
+}
+
 // FetchCreditBalance 获取积分余额
 func (c *ClaudeAPIClient) FetchCreditBalance() (*models.CreditBalance, error) {
 	if c.cookie == "" {
@@ -116,7 +124,7 @@ func (c *ClaudeAPIClient) FetchCreditBalance() (*models.CreditBalance, error) {
 		SetHeader("Referer", "https://www.aicodemirror.com/dashboard/usage").
 		SetHeader("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36").
 		SetHeader("Accept", "application/json, text/plain, */*").
-		Get("https://www.aicodemirror.com/api/user/usage/chart")
+		Get("https://www.aicodemirror.com/api/user/credits")
 
 	if err != nil {
 		return nil, fmt.Errorf("获取积分余额请求失败: %w", err)
@@ -134,53 +142,18 @@ func (c *ClaudeAPIClient) FetchCreditBalance() (*models.CreditBalance, error) {
 	utils.Logf("积分余额API原始响应: %s", string(resp.Body()))
 
 	// 解析API返回的数据格式
-	var response struct {
-		ChartData []models.CreditChartData `json:"chartData"`
-	}
-	if err := json.Unmarshal(resp.Body(), &response); err != nil {
+	var creditsResp ClaudeCreditsResponse
+	if err := json.Unmarshal(resp.Body(), &creditsResp); err != nil {
 		return nil, fmt.Errorf("解析积分数据失败: %w", err)
 	}
 
-	chartData := response.ChartData
-
-	// 添加调试日志（可控制）
-	utils.Logf("积分余额API返回数据条数: %d", len(chartData))
-
-	// 计算剩余积分
-	totalConsumed := 0
-	totalAdded := 0
-
-	for _, data := range chartData {
-		totalConsumed += data.Consumed
-		totalAdded += data.Added
-		utils.Logf("时间段: %s, 消耗: %d, 增加: %d", data.Hour, data.Consumed, data.Added)
-	}
-
-	utils.Logf("总消耗: %d, 总增加: %d", totalConsumed, totalAdded)
-
-	// 修正积分余额计算逻辑
-	diff := totalAdded - totalConsumed
-	var remaining int
-	
-	if diff >= 0 {
-		// 增加的积分 >= 消耗的积分，基础8000 + 差值
-		remaining = 8000 + diff
-	} else {
-		// 消耗的积分 > 增加的积分，基础8000 - 差值的绝对值
-		remaining = 8000 + diff // diff是负数，所以相当于8000 - abs(diff)
-	}
-
-	if remaining < 0 {
-		remaining = 0
-	}
-
-	utils.Logf("计算结果 - 差值: %d, 剩余积分: %d", diff, remaining)
+	utils.Logf("获取到准确的剩余积分: %d", creditsResp.Credits)
 
 	// 通知成功请求，更新Cookie验证时间戳
 	c.notifySuccessfulRequest()
 
 	return &models.CreditBalance{
-		Remaining: remaining,
+		Remaining: creditsResp.Credits,
 		UpdatedAt: time.Now(),
 	}, nil
 }
