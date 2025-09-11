@@ -12,8 +12,8 @@ export interface IUsageData {
 // 用户配置
 export interface IUserConfig {
   cookie: string;
-  interval: number;                  // 分钟
-  timeRange: number;                 // 小时
+  interval: number;                  // 秒
+  timeRange: number;                 // 分钟
   enabled: boolean;
 }
 

@@ -12,7 +12,7 @@ interface SettingsModalProps {
 export function SettingsModal({ isOpen, onClose, onConfigUpdate }: SettingsModalProps) {
   const [config, setConfig] = useState<IUserConfig>({
     cookie: '',
-    interval: 1,
+    interval: 60,
     timeRange: 60,
     enabled: false
   });
@@ -113,12 +113,12 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate }: SettingsModal
             {/* Cookie配置 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Claude Cookie
+                ACM Cookie
               </label>
               <div className="flex gap-2">
                 <input
                   type="password"
-                  placeholder="请输入Claude网站的Cookie"
+                  placeholder="请输入 ACM 网站的Cookie"
                   className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200"
                   value={config.cookie === '已设置' ? '' : config.cookie}
                   onChange={(e) => updateConfig('cookie', e.target.value)}
@@ -144,25 +144,26 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate }: SettingsModal
                 </p>
               )}
               <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
-                从浏览器开发者工具中复制Claude网站的Cookie
+                从浏览器开发者工具中复制 ACM 网站的Cookie
               </p>
             </div>
 
             {/* 监控间隔 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                监控间隔 (分钟)
+                监控间隔
               </label>
               <select
                 className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200 bg-white"
                 value={config.interval}
                 onChange={(e) => updateConfig('interval', parseInt(e.target.value))}
               >
-                <option value={1}>1分钟</option>
-                <option value={5}>5分钟</option>
-                <option value={10}>10分钟</option>
-                <option value={30}>30分钟</option>
-                <option value={60}>1小时</option>
+                <option value={30}>30秒</option>
+                <option value={60}>1分钟</option>
+                <option value={300}>5分钟</option>
+                <option value={600}>10分钟</option>
+                <option value={1800}>30分钟</option>
+                <option value={3600}>1小时</option>
               </select>
             </div>
 

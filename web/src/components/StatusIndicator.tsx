@@ -57,18 +57,16 @@ export function StatusIndicator({
         {/* 连接状态 */}
         <div className="flex items-center justify-between">
           <span className="text-sm text-gray-600">连接状态</span>
-          <div className={`flex items-center px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${connectionStatus.color}`}>
+          <div className={`flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200 ${connectionStatus.color}`} title={connectionStatus.text}>
             {connectionStatus.icon}
-            <span className="ml-1.5">{connectionStatus.text}</span>
           </div>
         </div>
 
         {/* 监控状态 */}
         <div className="flex items-center justify-between">
           <span className="text-sm text-gray-600">监控状态</span>
-          <div className={`flex items-center px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${monitoringStatus.color}`}>
+          <div className={`flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200 ${monitoringStatus.color}`} title={monitoringStatus.text}>
             {monitoringStatus.icon}
-            <span className="ml-1.5">{monitoringStatus.text}</span>
           </div>
         </div>
 

@@ -58,7 +58,7 @@ export function UsageChart({ data, className = '' }: UsageChartProps) {
   const option = useMemo(() => ({
     backgroundColor: 'transparent',
     title: {
-      text: 'Claude Code积分使用趋势',
+      text: 'ACM Claude 积分使用趋势',
       left: 'center',
       textStyle: {
         fontSize: 20,

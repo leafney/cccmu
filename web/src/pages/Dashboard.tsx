@@ -4,6 +4,7 @@ import { SettingsModal } from '../components/SettingsModal';
 import type { IUsageData, IUserConfig, ICreditBalance } from '../types';
 import { apiClient } from '../api/client';
 import { Settings, Wifi, WifiOff, RefreshCw } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 export function Dashboard() {
   const [usageData, setUsageData] = useState<IUsageData[]>([]);
@@ -14,6 +15,7 @@ export function Dashboard() {
   const [eventSource, setEventSource] = useState<EventSource | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [creditBalance, setCreditBalance] = useState<ICreditBalance | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const retryTimeoutRef = useRef<number | null>(null);
 
   // 建立SSE连接
@@ -219,11 +221,11 @@ export function Dashboard() {
             setConfig(updatedConfig);
             // 配置更新后，useEffect会自动触发loadHistoricalData，无需重复调用
           }
-        } catch (error) {
+        } catch (startError) {
           // 启动操作失败，恢复UI状态为关闭
-          console.error('启动监控失败:', error);
+          console.error('启动监控失败:', startError);
           setIsMonitoring(false);
-          throw error;
+          throw startError;
         }
       }
     } catch (error) {
@@ -244,9 +246,17 @@ export function Dashboard() {
   const handleRefresh = async () => {
     // 检查Cookie是否存在
     if (!config?.cookie || config.cookie === '') {
-      console.warn('无法刷新数据：未配置Cookie');
+      toast.error('请先配置Cookie');
       return;
     }
+
+    // 如果正在刷新，则忽略
+    if (isRefreshing) {
+      return;
+    }
+
+    setIsRefreshing(true);
+    const loadingToastId = toast.loading('正在刷新数据...');
 
     try {
       // 同时刷新使用数据和积分余额
@@ -259,8 +269,13 @@ export function Dashboard() {
         loadHistoricalData(),
         loadCreditBalance()
       ]);
+      
+      toast.success('数据刷新成功', { id: loadingToastId });
     } catch (error) {
       console.error('手动刷新失败:', error);
+      toast.error('刷新失败，请稍后重试', { id: loadingToastId });
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -288,15 +303,12 @@ export function Dashboard() {
             </div>
           )}
           {/* 连接状态指示 */}
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center" title={isConnected ? "已连接" : "连接断开"}>
             {isConnected ? (
               <Wifi className="w-5 h-5 text-green-400" />
             ) : (
               <WifiOff className="w-5 h-5 text-red-400" />
             )}
-            <span className="text-sm text-white/80 hidden md:block">
-              {isConnected ? '已连接' : '连接断开'}
-            </span>
           </div>
 
           {/* 监控状态开关 */}
@@ -320,11 +332,11 @@ export function Dashboard() {
           {/* 手动刷新按钮 */}
           <button
             onClick={handleRefresh}
-            disabled={!config?.cookie || config.cookie === ''}
+            disabled={(!config?.cookie || config.cookie === '') || isRefreshing}
             className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             title={!config?.cookie || config.cookie === '' ? "请先配置Cookie" : "手动刷新数据"}
           >
-            <RefreshCw className="w-5 h-5" />
+            <RefreshCw className={`w-5 h-5 ${isRefreshing ? 'animate-spin' : ''}`} />
           </button>
 
           {/* 设置按钮 */}
