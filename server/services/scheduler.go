@@ -88,7 +88,7 @@ func (s *SchedulerService) Start() error {
 
 	// 添加使用数据定时任务
 	usageJob, err := s.scheduler.NewJob(
-		gocron.DurationJob(time.Duration(s.config.Interval)*time.Minute),
+		gocron.DurationJob(time.Duration(s.config.Interval)*time.Second),
 		gocron.NewTask(s.fetchAndSaveData),
 		gocron.WithSingletonMode(gocron.LimitModeReschedule),
 	)
@@ -98,7 +98,7 @@ func (s *SchedulerService) Start() error {
 	
 	// 添加积分余额定时任务，间隔错开30秒执行
 	balanceJob, err := s.scheduler.NewJob(
-		gocron.DurationJob(time.Duration(s.config.Interval)*time.Minute),
+		gocron.DurationJob(time.Duration(s.config.Interval)*time.Second),
 		gocron.NewTask(s.fetchAndSaveBalance),
 		gocron.WithSingletonMode(gocron.LimitModeReschedule),
 		gocron.WithStartAt(
@@ -109,15 +109,15 @@ func (s *SchedulerService) Start() error {
 		return fmt.Errorf("创建积分余额定时任务失败: %w", err)
 	}
 	
-	log.Printf("使用数据定时任务创建成功，任务ID: %v，间隔: %d分钟", usageJob.ID(), s.config.Interval)
-	log.Printf("积分余额定时任务创建成功，任务ID: %v，间隔: %d分钟", balanceJob.ID(), s.config.Interval)
+	log.Printf("使用数据定时任务创建成功，任务ID: %v，间隔: %d秒", usageJob.ID(), s.config.Interval)
+	log.Printf("积分余额定时任务创建成功，任务ID: %v，间隔: %d秒", balanceJob.ID(), s.config.Interval)
 
 
 	// 启动调度器
 	s.scheduler.Start()
 	s.isRunning = true
 
-	log.Printf("定时任务已启动，间隔: %d分钟", s.config.Interval)
+	log.Printf("定时任务已启动，间隔: %d秒", s.config.Interval)
 
 	// 立即执行一次，确保在所有监听器建立后执行
 	go func() {
@@ -227,7 +227,7 @@ func (s *SchedulerService) startWithoutLock() error {
 
 	// 添加使用数据定时任务
 	usageJob, err := s.scheduler.NewJob(
-		gocron.DurationJob(time.Duration(s.config.Interval)*time.Minute),
+		gocron.DurationJob(time.Duration(s.config.Interval)*time.Second),
 		gocron.NewTask(s.fetchAndSaveData),
 		gocron.WithSingletonMode(gocron.LimitModeReschedule),
 	)
@@ -237,7 +237,7 @@ func (s *SchedulerService) startWithoutLock() error {
 	
 	// 添加积分余额定时任务，间隔错开30秒执行
 	balanceJob, err := s.scheduler.NewJob(
-		gocron.DurationJob(time.Duration(s.config.Interval)*time.Minute),
+		gocron.DurationJob(time.Duration(s.config.Interval)*time.Second),
 		gocron.NewTask(s.fetchAndSaveBalance),
 		gocron.WithSingletonMode(gocron.LimitModeReschedule),
 		gocron.WithStartAt(
@@ -248,14 +248,14 @@ func (s *SchedulerService) startWithoutLock() error {
 		return fmt.Errorf("创建积分余额定时任务失败: %w", err)
 	}
 	
-	log.Printf("使用数据定时任务重建成功，任务ID: %v，间隔: %d分钟", usageJob.ID(), s.config.Interval)
-	log.Printf("积分余额定时任务重建成功，任务ID: %v，间隔: %d分钟", balanceJob.ID(), s.config.Interval)
+	log.Printf("使用数据定时任务重建成功，任务ID: %v，间隔: %d秒", usageJob.ID(), s.config.Interval)
+	log.Printf("积分余额定时任务重建成功，任务ID: %v，间隔: %d秒", balanceJob.ID(), s.config.Interval)
 
 
 	s.scheduler.Start()
 	s.isRunning = true
 
-	log.Printf("定时任务已重启，间隔: %d分钟", s.config.Interval)
+	log.Printf("定时任务已重启，间隔: %d秒", s.config.Interval)
 	
 	// 立即执行一次
 	go func() {

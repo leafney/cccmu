@@ -1,7 +1,7 @@
-# Claude Code 项目开发规范
+# ACM Claude 项目开发规范
 
 ## 项目信息
-- **项目名称**: Claude Code积分监控系统 (CCCMU)
+- **项目名称**: ACM Claude 积分监控系统 (CCCMU)
 - **技术栈**: Go + Fiber v2 (后端) + React + TypeScript (前端)
 - **开发工具**: Bun + Vite + TailwindCSS4 + ECharts
 

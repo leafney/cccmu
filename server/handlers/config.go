@@ -77,7 +77,7 @@ func (h *ConfigHandler) UpdateConfig(c *fiber.Ctx) error {
 		return c.Status(500).JSON(models.Error(500, "更新配置失败", err))
 	}
 
-	log.Printf("配置已更新: 间隔=%d分钟, 时间范围=%d小时, 启用=%v", 
+	log.Printf("配置已更新: 间隔=%d秒, 时间范围=%d分钟, 启用=%v", 
 		newConfig.Interval, newConfig.TimeRange, newConfig.Enabled)
 
 	return c.JSON(models.SuccessMessage("配置更新成功"))

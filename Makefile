@@ -1,4 +1,4 @@
-# Claude Code积分监控系统 构建脚本
+# ACM Claude积分监控系统 构建脚本
 
 # 变量定义
 BINARY_NAME=cccmu

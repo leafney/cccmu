@@ -1,12 +1,12 @@
-# Claude Code 积分监控系统 (CCCMU)
+# ACM Claude 积分监控系统 (CCCMU)
 
-一个用于实时监控和可视化 Claude Code 积分使用量的 Web 应用程序。
+一个用于实时监控和可视化 ACM Claude 积分使用量的 Web 应用程序。
 
 ## 📸 项目截图
 
-![Claude Code 积分监控系统界面](docs/image2.png)
+![ACM Claude 积分监控系统界面](docs/image2.png)
 
-*实时监控 Claude Code 积分使用量，支持多时间范围查看和趋势分析*
+*实时监控 ACM Claude 积分使用量，支持多时间范围查看和趋势分析*
 
 ## 🚀 功能特性
 
@@ -118,7 +118,7 @@ make build
 ./cccmu -h
 ```
 
-默认访问地址: http://localhost:8080
+默认访问地址: `http://localhost:8080`
 
 #### 命令行参数
 
@@ -165,13 +165,14 @@ PORT=8080 ./cccmu -port 9090
 
 ### Cookie 配置
 
-1. 访问 [Claude Code Dashboard](https://www.aicodemirror.com/dashboard/usage)
+1. 访问 [ACM Claude Dashboard](https://www.aicodemirror.com/dashboard/usage)
 2. 在浏览器开发者工具中复制完整的 Cookie 字符串
 3. 在应用设置页面中粘贴 Cookie 信息
 
 ### 数据获取间隔
 
 支持配置以下时间间隔：
+- 30 秒
 - 1 分钟（默认）
 - 5 分钟
 - 10 分钟
@@ -195,41 +196,6 @@ PORT=8080 ./cccmu -port 9090
 - 最近 6 小时
 - 最近 12 小时
 - 最近 24 小时
-
-## 🔌 API 接口
-
-### 数据接口
-
-- **积分查询**: `https://www.aicodemirror.com/api/user/usage`
-- **积分余额**: `https://www.aicodemirror.com/api/user/usage/chart`
-
-### SSE 连接
-
-前端通过以下端点建立 SSE 连接接收实时数据：
-- **连接地址**: `/api/usage/stream?minutes=60`
-- **事件类型**: 
-  - `usage` - 积分使用数据
-  - `balance` - 积分余额数据
-  - `heartbeat` - 连接保活心跳
-
-## 🛠️ 开发命令
-
-```bash
-# 查看所有可用命令
-make help
-
-# 代码格式化
-make fmt
-
-# 代码检查
-make lint
-
-# 运行测试
-make test
-
-# 清理构建文件
-make clean
-```
 
 ## 📊 数据格式
 
@@ -278,9 +244,3 @@ make clean
 ## 📞 支持
 
 如果您遇到任何问题或有功能建议，请在 [GitHub Issues](https://github.com/leafney/cccmu/issues) 中提出。
-
-## 引申
-
-看到有人开发了一个 Claude Code 插件，功能类似，真的要感叹一句：你他娘的还真是个人才！
-
-- [Bozhu12/cc-aicodemirror-statusline-plus: Claude Code 状态栏增强插件 - 显示 aicodemirror.com 积分余额](https://github.com/Bozhu12/cc-aicodemirror-statusline-plus)
