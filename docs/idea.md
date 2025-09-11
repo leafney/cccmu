@@ -58,8 +58,8 @@
 响应参数说明：
 
 - `id`: 数据id
-- `type`: 数据类型，当值为 `USAGE` 时，表示积分使用量，其他值时不考虑
-- `endpoint`: 数据接口地址，当值为 `v1/messages` 时，表示积分使用量，其他值时不考虑
+- `type`: 数据类型，当值为 `USAGE` 时，表示积分使用量，其他值暂时不考虑
+- `endpoint`: 数据接口地址，当值为 `v1/messages` 时，表示积分使用量，其他值暂时不考虑
 - `creditsUsed`: 积分使用量值，示例为 `100`
 - `createdAt`: 数据时间，示例为 `2025-08-25T13:22:59.270Z` ，需要做时间转换，转换为 `2025-08-25 13:22:59` 格式
 - `model`: 模型名称，示例为 `claude-sonnet-4-20250514`，相同的模型名称采用同一条折线展示，不同的模型名称采用不同的折线展示
@@ -91,6 +91,31 @@
   - accept：application/json, text/plain, */*
 - 响应参数：
   - code：响应状态码，200表示成功，其他值表示失败
-  - data：响应数据，示例为 `{"userId":1017827,"email":null,"credits":7739,"plan":"PRO"}`
+  - data：响应数据，示例为 `{"userId":1017428,"email":null,"credits":7739,"plan":"PRO"}`
 
 ---
+
+## 重置积分
+
+- 接口地址：https://www.aicodemirror.com/api/user/credits/reset
+- 接口方法：POST
+- 请求参数：
+  - cookie：用户在前端设置页面中添加的cookie信息
+  - referer：https://www.aicodemirror.com/dashboard
+  - user-agent：Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36
+  - accept：application/json, text/plain, */*
+- 响应参数：
+  - code：响应状态码，200表示成功，其他值表示失败
+  - data：响应数据，示例为:
+
+  ```json
+{
+    "success": true,
+    "balanceBefore": "980",
+    "balanceAfter": "8000",
+    "resetAmount": "7020",
+    "usedCount": 1,
+    "maxCount": 1,
+    "remainingCount": 0
+}
+  ```

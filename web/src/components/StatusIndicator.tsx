@@ -88,7 +88,7 @@ export function StatusIndicator({
               isConnected ? 'bg-green-500 shadow-sm' : 'bg-red-500'
             } ${isConnected ? 'animate-pulse' : ''}`}></div>
             <span className="ml-2 text-xs text-gray-500">
-              {isConnected ? 'SSE连接正常' : 'SSE连接断开'}
+              {isConnected ? '连接正常' : '连接断开'}
             </span>
           </div>
         </div>

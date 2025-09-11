@@ -1,25 +1,44 @@
 import type { IUserConfig, IAPIResponse, IUsageData, ICreditBalance } from '../types';
 
 const API_BASE = '/api';
+const DEFAULT_TIMEOUT = 30000; // 30秒超时
+
+// 创建超时控制器
+function createTimeoutController(timeout: number = DEFAULT_TIMEOUT): AbortController {
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), timeout);
+  return controller;
+}
 
 class APIClient {
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    timeout: number = DEFAULT_TIMEOUT
   ): Promise<IAPIResponse<T>> {
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    });
+    const controller = createTimeoutController(timeout);
+    
+    try {
+      const response = await fetch(`${API_BASE}${endpoint}`, {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+      });
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      return response.json();
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('请求超时，请检查网络连接');
+      }
+      throw error;
     }
-
-    return response.json();
   }
 
   // 获取配置
@@ -68,12 +87,6 @@ class APIClient {
     return this.request<ICreditBalance>('/balance');
   }
 
-  // 手动刷新积分余额
-  async refreshBalance(): Promise<IAPIResponse> {
-    return this.request('/balance/refresh', {
-      method: 'POST',
-    });
-  }
 
   // 创建SSE连接
   createSSEConnection(
@@ -112,6 +125,19 @@ class APIClient {
     eventSource.addEventListener('heartbeat', (event) => {
       // 心跳事件，保持连接活跃
       console.debug('收到SSE心跳:', event.data);
+    });
+
+    eventSource.addEventListener('error', (event: MessageEvent) => {
+      try {
+        const errorData = JSON.parse(event.data);
+        console.error('SSE接收到错误信息:', errorData.message);
+        // 这里需要在Dashboard组件中显示toast，所以需要传递错误回调
+        if (onError && typeof onError === 'function') {
+          onError(new CustomEvent('api-error', { detail: errorData.message }) as Event);
+        }
+      } catch (error) {
+        console.error('解析错误信息失败:', error, event.data);
+      }
     });
 
     eventSource.onerror = (error) => {
