@@ -79,3 +79,14 @@ func (h *ControlHandler) RefreshBalance(c *fiber.Ctx) error {
 	log.Println("积分余额已手动刷新")
 	return c.JSON(models.SuccessMessage("积分余额刷新成功"))
 }
+
+// RefreshAll 手动刷新所有数据（使用数据 + 积分余额）
+func (h *ControlHandler) RefreshAll(c *fiber.Ctx) error {
+	if err := h.scheduler.FetchAllDataManually(); err != nil {
+		log.Printf("手动刷新所有数据失败: %v", err)
+		return c.Status(500).JSON(models.Error(500, "刷新数据失败", err))
+	}
+
+	log.Println("所有数据已手动刷新")
+	return c.JSON(models.SuccessMessage("数据刷新成功"))
+}

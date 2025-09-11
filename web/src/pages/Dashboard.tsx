@@ -158,12 +158,14 @@ export function Dashboard() {
     }
   }, [config?.timeRange]);
 
-  // 初始加载历史数据
+  // 初始加载历史数据（仅在首次加载时）
   useEffect(() => {
-    if (config) {
+    if (config && !eventSource) {
+      // 只在没有SSE连接时才手动加载数据
+      // 因为SSE连接建立时会自动推送历史数据
       loadHistoricalData();
     }
-  }, [config, loadHistoricalData]);
+  }, [config, loadHistoricalData, eventSource]);
 
 
   const toggleMonitoring = async () => {
@@ -259,17 +261,10 @@ export function Dashboard() {
     const loadingToastId = toast.loading('正在刷新数据...');
 
     try {
-      // 同时刷新使用数据和积分余额
-      await Promise.all([
-        fetch('/api/refresh', { method: 'POST' }),
-        apiClient.refreshBalance()
-      ]);
+      // 使用统一刷新接口，一次请求同时刷新使用数据和积分余额
+      await fetch('/api/refresh-all', { method: 'POST' });
       
-      await Promise.all([
-        loadHistoricalData(),
-        loadCreditBalance()
-      ]);
-      
+      // 刷新后的数据会通过SSE自动推送，无需额外HTTP请求
       toast.success('数据刷新成功', { id: loadingToastId });
     } catch (error) {
       console.error('手动刷新失败:', error);
@@ -296,7 +291,7 @@ export function Dashboard() {
           {/* 积分余额显示 */}
           {creditBalance && (
             <div className="text-white bg-white/10 px-3 py-1 rounded-lg backdrop-blur-sm">
-              <div className="text-xs text-white/70">剩余积分</div>
+              <div className="text-xs text-white/70">可用积分</div>
               <div className="text-sm font-mono font-bold text-yellow-400">
                 {creditBalance.remaining.toLocaleString()}
               </div>

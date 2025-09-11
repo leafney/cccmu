@@ -293,6 +293,43 @@ func (s *SchedulerService) FetchBalanceManually() error {
 	return s.fetchAndSaveBalance()
 }
 
+// FetchAllDataManually 手动获取所有数据（使用数据 + 积分余额）
+func (s *SchedulerService) FetchAllDataManually() error {
+	// 更新配置（只需要更新一次）
+	config, err := s.db.GetConfig()
+	if err == nil {
+		s.config = config
+		s.apiClient.UpdateCookie(config.Cookie)
+	}
+
+	// 同时获取使用数据和积分余额
+	// 使用goroutine并发获取，提高性能
+	errChan := make(chan error, 2)
+	
+	go func() {
+		errChan <- s.fetchAndSaveData()
+	}()
+	
+	go func() {
+		errChan <- s.fetchAndSaveBalance()
+	}()
+
+	// 等待两个任务完成
+	var errors []error
+	for i := 0; i < 2; i++ {
+		if err := <-errChan; err != nil {
+			errors = append(errors, err)
+		}
+	}
+
+	// 如果有错误，返回第一个错误
+	if len(errors) > 0 {
+		return errors[0]
+	}
+
+	return nil
+}
+
 // fetchAndSaveData 获取并保存数据
 func (s *SchedulerService) fetchAndSaveData() error {
 	data, err := s.apiClient.FetchUsageData()
