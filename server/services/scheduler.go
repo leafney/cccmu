@@ -15,16 +15,17 @@ import (
 
 // SchedulerService 定时任务服务
 type SchedulerService struct {
-	scheduler       gocron.Scheduler
-	db              *database.BadgerDB
-	apiClient       *client.ClaudeAPIClient
-	config          *models.UserConfig
-	isRunning       bool
-	mu              sync.RWMutex
-	lastData        []models.UsageData
-	listeners       []chan []models.UsageData
-	lastBalance     *models.CreditBalance
+	scheduler        gocron.Scheduler
+	db               *database.BadgerDB
+	apiClient        *client.ClaudeAPIClient
+	config           *models.UserConfig
+	isRunning        bool
+	mu               sync.RWMutex
+	lastData         []models.UsageData
+	listeners        []chan []models.UsageData
+	lastBalance      *models.CreditBalance
 	balanceListeners []chan *models.CreditBalance
+	errorListeners   []chan string
 }
 
 // NewSchedulerService 创建新的调度服务
@@ -41,7 +42,7 @@ func NewSchedulerService(db *database.BadgerDB) (*SchedulerService, error) {
 	}
 
 	apiClient := client.NewClaudeAPIClient(config.Cookie)
-	
+
 	service := &SchedulerService{
 		scheduler:        scheduler,
 		db:               db,
@@ -50,8 +51,8 @@ func NewSchedulerService(db *database.BadgerDB) (*SchedulerService, error) {
 		isRunning:        false,
 		listeners:        make([]chan []models.UsageData, 0),
 		balanceListeners: make([]chan *models.CreditBalance, 0),
+		errorListeners:   make([]chan string, 0),
 	}
-
 
 	return service, nil
 }
@@ -95,23 +96,22 @@ func (s *SchedulerService) Start() error {
 	if err != nil {
 		return fmt.Errorf("创建使用数据定时任务失败: %w", err)
 	}
-	
-	// 添加积分余额定时任务，间隔错开30秒执行
+
+	// 添加积分余额定时任务，间隔错开20秒执行
 	balanceJob, err := s.scheduler.NewJob(
 		gocron.DurationJob(time.Duration(s.config.Interval)*time.Second),
 		gocron.NewTask(s.fetchAndSaveBalance),
 		gocron.WithSingletonMode(gocron.LimitModeReschedule),
 		gocron.WithStartAt(
-			gocron.WithStartDateTime(time.Now().Add(30*time.Second)),
+			gocron.WithStartDateTime(time.Now().Add(20*time.Second)),
 		),
 	)
 	if err != nil {
 		return fmt.Errorf("创建积分余额定时任务失败: %w", err)
 	}
-	
+
 	log.Printf("使用数据定时任务创建成功，任务ID: %v，间隔: %d秒", usageJob.ID(), s.config.Interval)
 	log.Printf("积分余额定时任务创建成功，任务ID: %v，间隔: %d秒", balanceJob.ID(), s.config.Interval)
-
 
 	// 启动调度器
 	s.scheduler.Start()
@@ -123,8 +123,8 @@ func (s *SchedulerService) Start() error {
 	go func() {
 		time.Sleep(100 * time.Millisecond) // 短暂延迟，确保SSE连接已建立
 		s.fetchAndSaveData()
-		// 延迟1秒后获取积分余额，避免并发
-		time.Sleep(1 * time.Second)
+		// 延迟5秒后获取积分余额，避免并发
+		time.Sleep(5 * time.Second)
 		s.fetchAndSaveBalance()
 	}()
 
@@ -197,7 +197,6 @@ func (s *SchedulerService) UpdateConfig(newConfig *models.UserConfig) error {
 
 	s.config = newConfig
 	s.apiClient.UpdateCookie(newConfig.Cookie)
-	
 
 	// 如果新配置启用且之前在运行，重新启动
 	if newConfig.Enabled && wasRunning {
@@ -234,7 +233,7 @@ func (s *SchedulerService) startWithoutLock() error {
 	if err != nil {
 		return fmt.Errorf("创建使用数据定时任务失败: %w", err)
 	}
-	
+
 	// 添加积分余额定时任务，间隔错开30秒执行
 	balanceJob, err := s.scheduler.NewJob(
 		gocron.DurationJob(time.Duration(s.config.Interval)*time.Second),
@@ -247,25 +246,17 @@ func (s *SchedulerService) startWithoutLock() error {
 	if err != nil {
 		return fmt.Errorf("创建积分余额定时任务失败: %w", err)
 	}
-	
+
 	log.Printf("使用数据定时任务重建成功，任务ID: %v，间隔: %d秒", usageJob.ID(), s.config.Interval)
 	log.Printf("积分余额定时任务重建成功，任务ID: %v，间隔: %d秒", balanceJob.ID(), s.config.Interval)
-
 
 	s.scheduler.Start()
 	s.isRunning = true
 
 	log.Printf("定时任务已重启，间隔: %d秒", s.config.Interval)
-	
-	// 立即执行一次
-	go func() {
-		time.Sleep(100 * time.Millisecond)
-		s.fetchAndSaveData()
-		// 延迟1秒后获取积分余额，避免并发
-		time.Sleep(1 * time.Second)
-		s.fetchAndSaveBalance()
-	}()
-	
+
+	// 重启时不立即执行，等待定时任务自然触发
+
 	return nil
 }
 
@@ -305,11 +296,11 @@ func (s *SchedulerService) FetchAllDataManually() error {
 	// 同时获取使用数据和积分余额
 	// 使用goroutine并发获取，提高性能
 	errChan := make(chan error, 2)
-	
+
 	go func() {
 		errChan <- s.fetchAndSaveData()
 	}()
-	
+
 	go func() {
 		errChan <- s.fetchAndSaveBalance()
 	}()
@@ -335,6 +326,8 @@ func (s *SchedulerService) fetchAndSaveData() error {
 	data, err := s.apiClient.FetchUsageData()
 	if err != nil {
 		log.Printf("获取数据失败: %v", err)
+		// 通过SSE推送错误信息
+		s.notifyErrorListeners(fmt.Sprintf("获取使用数据失败: %s", err.Error()))
 		return err
 	}
 
@@ -353,6 +346,8 @@ func (s *SchedulerService) fetchAndSaveBalance() error {
 	balance, err := s.apiClient.FetchCreditBalance()
 	if err != nil {
 		log.Printf("获取积分余额失败: %v", err)
+		// 通过SSE推送错误信息
+		s.notifyErrorListeners(fmt.Sprintf("获取积分余额失败: %s", err.Error()))
 		return err
 	}
 
@@ -400,6 +395,16 @@ func (s *SchedulerService) AddBalanceListener() chan *models.CreditBalance {
 	return listener
 }
 
+// AddErrorListener 添加错误监听器
+func (s *SchedulerService) AddErrorListener() chan string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	listener := make(chan string, 10)
+	s.errorListeners = append(s.errorListeners, listener)
+	return listener
+}
+
 // RemoveDataListener 移除数据监听器
 func (s *SchedulerService) RemoveDataListener(listener chan []models.UsageData) {
 	s.mu.Lock()
@@ -428,11 +433,25 @@ func (s *SchedulerService) RemoveBalanceListener(listener chan *models.CreditBal
 	}
 }
 
+// RemoveErrorListener 移除错误监听器
+func (s *SchedulerService) RemoveErrorListener(listener chan string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i, l := range s.errorListeners {
+		if l == listener {
+			close(l)
+			s.errorListeners = append(s.errorListeners[:i], s.errorListeners[i+1:]...)
+			break
+		}
+	}
+}
+
 // notifyListeners 通知所有监听器
 func (s *SchedulerService) notifyListeners(data []models.UsageData) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	for _, listener := range s.listeners {
 		select {
 		case listener <- data:
@@ -447,7 +466,7 @@ func (s *SchedulerService) notifyListeners(data []models.UsageData) {
 func (s *SchedulerService) notifyBalanceListeners(balance *models.CreditBalance) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	for _, listener := range s.balanceListeners {
 		select {
 		case listener <- balance:
@@ -458,12 +477,25 @@ func (s *SchedulerService) notifyBalanceListeners(balance *models.CreditBalance)
 	}
 }
 
+// notifyErrorListeners 通知所有错误监听器
+func (s *SchedulerService) notifyErrorListeners(errorMsg string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
+	for _, listener := range s.errorListeners {
+		select {
+		case listener <- errorMsg:
+			// 错误信息发送成功
+		default:
+			// 通道已满，跳过通知
+		}
+	}
+}
 
 // Shutdown 关闭服务
 func (s *SchedulerService) Shutdown() {
 	s.Stop()
-	
+
 	// 关闭所有监听器
 	s.mu.Lock()
 	for _, listener := range s.listeners {
@@ -472,7 +504,11 @@ func (s *SchedulerService) Shutdown() {
 	for _, listener := range s.balanceListeners {
 		close(listener)
 	}
+	for _, listener := range s.errorListeners {
+		close(listener)
+	}
 	s.listeners = nil
 	s.balanceListeners = nil
+	s.errorListeners = nil
 	s.mu.Unlock()
 }

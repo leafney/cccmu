@@ -51,16 +51,6 @@ func (h *ControlHandler) GetTaskStatus(c *fiber.Ctx) error {
 	return c.JSON(models.Success(status))
 }
 
-// RefreshData 手动刷新数据
-func (h *ControlHandler) RefreshData(c *fiber.Ctx) error {
-	if err := h.scheduler.FetchDataManually(); err != nil {
-		log.Printf("手动刷新数据失败: %v", err)
-		return c.Status(500).JSON(models.Error(500, "刷新数据失败", err))
-	}
-
-	log.Println("数据已手动刷新")
-	return c.JSON(models.SuccessMessage("数据刷新成功"))
-}
 
 // GetCreditBalance 获取积分余额
 func (h *ControlHandler) GetCreditBalance(c *fiber.Ctx) error {
@@ -69,16 +59,6 @@ func (h *ControlHandler) GetCreditBalance(c *fiber.Ctx) error {
 	return c.JSON(models.Success(balance))
 }
 
-// RefreshBalance 手动刷新积分余额
-func (h *ControlHandler) RefreshBalance(c *fiber.Ctx) error {
-	if err := h.scheduler.FetchBalanceManually(); err != nil {
-		log.Printf("手动刷新积分余额失败: %v", err)
-		return c.Status(500).JSON(models.Error(500, "刷新积分余额失败", err))
-	}
-
-	log.Println("积分余额已手动刷新")
-	return c.JSON(models.SuccessMessage("积分余额刷新成功"))
-}
 
 // RefreshAll 手动刷新所有数据（使用数据 + 积分余额）
 func (h *ControlHandler) RefreshAll(c *fiber.Ctx) error {

@@ -76,9 +76,11 @@ func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
 		// 添加数据监听器
 		listener := h.scheduler.AddDataListener()
 		balanceListener := h.scheduler.AddBalanceListener()
+		errorListener := h.scheduler.AddErrorListener()
 		defer func() {
 			h.scheduler.RemoveDataListener(listener)
 			h.scheduler.RemoveBalanceListener(balanceListener)
+			h.scheduler.RemoveErrorListener(errorListener)
 		}()
 
 		// 设置连接保活
@@ -118,6 +120,26 @@ func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
 					continue
 				}
 				fmt.Fprintf(w, "event: balance\ndata: %s\n\n", jsonData)
+				if err := w.Flush(); err != nil {
+					return
+				}
+
+			case errorMsg, ok := <-errorListener:
+				if !ok {
+					return // 监听器已关闭
+				}
+
+				// 发送错误信息
+				errorData := map[string]any{
+					"type":      "error",
+					"message":   errorMsg,
+					"timestamp": time.Now().Format(time.RFC3339),
+				}
+				jsonData, err := json.Marshal(errorData)
+				if err != nil {
+					continue
+				}
+				fmt.Fprintf(w, "event: error\ndata: %s\n\n", jsonData)
 				if err := w.Flush(); err != nil {
 					return
 				}
