@@ -87,6 +87,13 @@ class APIClient {
     return this.request<ICreditBalance>('/balance');
   }
 
+  // 重置积分
+  async resetCredits(): Promise<IAPIResponse> {
+    return this.request('/balance/reset', {
+      method: 'POST',
+    });
+  }
+
 
   // 创建SSE连接
   createSSEConnection(

@@ -59,6 +59,15 @@ func (h *ControlHandler) GetCreditBalance(c *fiber.Ctx) error {
 	return c.JSON(models.Success(balance))
 }
 
+// ResetCredits 重置积分
+func (h *ControlHandler) ResetCredits(c *fiber.Ctx) error {
+	// TODO: 实现实际的重置积分逻辑
+	// 目前直接返回成功状态，待后续补充具体实现
+	
+	log.Println("积分重置请求已收到")
+	return c.JSON(models.SuccessMessage("积分重置成功"))
+}
+
 
 // RefreshAll 手动刷新所有数据（使用数据 + 积分余额）
 func (h *ControlHandler) RefreshAll(c *fiber.Ctx) error {

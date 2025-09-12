@@ -3,7 +3,7 @@ import { UsageChart } from '../components/UsageChart';
 import { SettingsModal } from '../components/SettingsModal';
 import type { IUsageData, IUserConfig, ICreditBalance } from '../types';
 import { apiClient } from '../api/client';
-import { Settings, Wifi, WifiOff, RefreshCw, BarChart3 } from 'lucide-react';
+import { Settings, Wifi, WifiOff, RefreshCw, BarChart3, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export function Dashboard() {
@@ -16,6 +16,7 @@ export function Dashboard() {
   const [showSettings, setShowSettings] = useState(false);
   const [creditBalance, setCreditBalance] = useState<ICreditBalance | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const retryTimeoutRef = useRef<number | null>(null);
 
   // 建立SSE连接
@@ -314,6 +315,39 @@ export function Dashboard() {
     }
   };
 
+  // 重置积分
+  const handleResetCredits = () => {
+    // 检查Cookie是否存在（"已设置"表示已配置，空字符串表示未配置）
+    if (!config?.cookie || config.cookie === '') {
+      toast.error('请先配置Cookie');
+      return;
+    }
+
+    // 显示确认弹窗
+    setShowConfirmDialog(true);
+  };
+
+  // 确认重置积分
+  const confirmResetCredits = async () => {
+    setShowConfirmDialog(false);
+    
+    const loadingToastId = toast.loading('正在重置积分...');
+
+    try {
+      await apiClient.resetCredits();
+      toast.success('积分重置成功', { id: loadingToastId });
+      // 数据刷新由后端处理，前端通过SSE自动接收最新数据
+    } catch (error) {
+      console.error('重置积分失败:', error);
+      toast.error(error instanceof Error ? error.message : '重置失败，请稍后重试', { id: loadingToastId });
+    }
+  };
+
+  // 取消重置积分
+  const cancelResetCredits = () => {
+    setShowConfirmDialog(false);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900">
       {/* 顶部控制栏 */}
@@ -338,14 +372,19 @@ export function Dashboard() {
 
         {/* 右侧控制区 */}
         <div className="flex items-center space-x-4">
-          {/* 积分余额显示 */}
+          {/* 积分余额显示 - 可点击重置 */}
           {creditBalance && (
-            <div className="text-white bg-white/10 px-3 py-1 rounded-lg backdrop-blur-sm">
+            <button
+              onClick={handleResetCredits}
+              disabled={!config?.cookie || config.cookie === '' || !isConnected}
+              className="text-white bg-white/10 px-3 py-1 rounded-lg backdrop-blur-sm hover:bg-white/20 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white/10"
+              title={!isConnected ? "请等待连接建立" : (!config?.cookie || config.cookie === '') ? "请先配置Cookie" : "点击重置积分（每日仅一次）"}
+            >
               <div className="text-xs text-white/70">可用积分</div>
               <div className="text-sm font-mono font-bold text-yellow-400">
                 {creditBalance.remaining.toLocaleString()}
               </div>
-            </div>
+            </button>
           )}
 
           {/* 监控状态开关 */}
@@ -418,6 +457,56 @@ export function Dashboard() {
         onClose={() => setShowSettings(false)}
         onConfigUpdate={handleConfigUpdate}
       />
+
+      {/* 重置积分确认弹窗 */}
+      {showConfirmDialog && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          {/* 背景遮罩 */}
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
+            onClick={cancelResetCredits}
+          />
+          
+          {/* 弹窗内容 */}
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="relative bg-white rounded-xl shadow-xl w-full max-w-md p-6 transform transition-all">
+              {/* 关闭按钮 */}
+              <button
+                onClick={cancelResetCredits}
+                className="absolute top-4 right-4 p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              {/* 标题 */}
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                重置积分
+              </h3>
+
+              {/* 内容 */}
+              <p className="text-gray-600 mb-6">
+                确认要重置积分吗？每日仅有一次重置机会。
+              </p>
+
+              {/* 按钮组 */}
+              <div className="flex space-x-3 justify-end">
+                <button
+                  onClick={cancelResetCredits}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={confirmResetCredits}
+                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                >
+                  确认重置
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

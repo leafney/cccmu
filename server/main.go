@@ -111,6 +111,7 @@ func main() {
 
 		// 积分余额相关
 		api.Get("/balance", controlHandler.GetCreditBalance)
+		api.Post("/balance/reset", controlHandler.ResetCredits)
 
 		// 数据相关
 		api.Get("/usage/stream", sseHandler.StreamUsageData)
