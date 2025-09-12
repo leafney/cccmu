@@ -66,6 +66,7 @@ func (b *BadgerDB) GetConfig() (*models.UserConfig, error) {
 	config := models.GetDefaultConfig()
 
 	err := b.db.View(func(txn *badger.Txn) error {
+		// 读取完整配置
 		item, err := txn.Get([]byte("config:full"))
 		if err != nil {
 			if err == badger.ErrKeyNotFound {
@@ -74,9 +75,33 @@ func (b *BadgerDB) GetConfig() (*models.UserConfig, error) {
 			return err
 		}
 
-		return item.Value(func(val []byte) error {
+		err = item.Value(func(val []byte) error {
 			return json.Unmarshal(val, config)
 		})
+		if err != nil {
+			return err
+		}
+
+		// 单独读取cookie字段（因为Cookie字段有json:"-"标签，不会被序列化）
+		cookieItem, err := txn.Get([]byte("config:cookie"))
+		if err != nil && err != badger.ErrKeyNotFound {
+			return err
+		}
+		if err == nil {
+			err = cookieItem.Value(func(val []byte) error {
+				var cookie string
+				if err := json.Unmarshal(val, &cookie); err != nil {
+					return err
+				}
+				config.Cookie = cookie
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
 	})
 
 	return config, err

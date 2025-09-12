@@ -9,11 +9,20 @@ export interface IUsageData {
   model: string;
 }
 
-// 用户配置
+// 用户配置（API响应）
 export interface IUserConfig {
-  cookie: string;
-  interval: number;                  // 秒
-  timeRange: number;                 // 分钟
+  cookie: boolean;                  // Cookie配置状态
+  interval: number;                 // 秒
+  timeRange: number;                // 分钟
+  enabled: boolean;
+  dailyResetUsed: boolean;          // 当日重置是否已使用
+}
+
+// 用户配置（API请求）
+export interface IUserConfigRequest {
+  cookie?: string | undefined;      // Cookie内容（设置时使用，可选字段）
+  interval: number;                 // 秒
+  timeRange: number;                // 分钟
   enabled: boolean;
 }
 

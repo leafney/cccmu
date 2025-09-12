@@ -73,14 +73,31 @@ func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
 			}
 		}
 
+		// 立即发送当前重置状态
+		config, err := h.db.GetConfig()
+		if err == nil {
+			resetData := map[string]any{
+				"type":      "reset_status",
+				"resetUsed": config.DailyResetUsed,
+				"timestamp": time.Now().Format(time.RFC3339),
+			}
+			jsonData, err := json.Marshal(resetData)
+			if err == nil {
+				fmt.Fprintf(w, "event: reset_status\ndata: %s\n\n", jsonData)
+				w.Flush()
+			}
+		}
+
 		// 添加数据监听器
 		listener := h.scheduler.AddDataListener()
 		balanceListener := h.scheduler.AddBalanceListener()
 		errorListener := h.scheduler.AddErrorListener()
+		resetStatusListener := h.scheduler.AddResetStatusListener()
 		defer func() {
 			h.scheduler.RemoveDataListener(listener)
 			h.scheduler.RemoveBalanceListener(balanceListener)
 			h.scheduler.RemoveErrorListener(errorListener)
+			h.scheduler.RemoveResetStatusListener(resetStatusListener)
 		}()
 
 		// 设置连接保活
@@ -140,6 +157,26 @@ func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
 					continue
 				}
 				fmt.Fprintf(w, "event: error\ndata: %s\n\n", jsonData)
+				if err := w.Flush(); err != nil {
+					return
+				}
+
+			case resetStatus, ok := <-resetStatusListener:
+				if !ok {
+					return // 监听器已关闭
+				}
+
+				// 发送重置状态信息
+				resetData := map[string]any{
+					"type":      "reset_status",
+					"resetUsed": resetStatus,
+					"timestamp": time.Now().Format(time.RFC3339),
+				}
+				jsonData, err := json.Marshal(resetData)
+				if err != nil {
+					continue
+				}
+				fmt.Fprintf(w, "event: reset_status\ndata: %s\n\n", jsonData)
 				if err := w.Flush(); err != nil {
 					return
 				}

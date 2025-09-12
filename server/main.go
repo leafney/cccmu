@@ -92,7 +92,7 @@ func main() {
 
 	// 初始化处理器
 	configHandler := handlers.NewConfigHandler(db, scheduler)
-	controlHandler := handlers.NewControlHandler(scheduler)
+	controlHandler := handlers.NewControlHandler(scheduler, db)
 	sseHandler := handlers.NewSSEHandler(db, scheduler)
 
 	// API路由

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { UsageChart } from '../components/UsageChart';
 import { SettingsModal } from '../components/SettingsModal';
-import type { IUsageData, IUserConfig, ICreditBalance } from '../types';
+import type { IUsageData, IUserConfig, IUserConfigRequest, ICreditBalance } from '../types';
 import { apiClient } from '../api/client';
 import { Settings, Wifi, WifiOff, RefreshCw, BarChart3, X } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -99,6 +99,11 @@ export function Dashboard() {
         };
         
         syncTaskStatus();
+      },
+      (resetUsed: boolean) => {
+        // 处理重置状态更新
+        console.debug('收到重置状态更新:', resetUsed);
+        setConfig(prev => prev ? { ...prev, dailyResetUsed: resetUsed } : prev);
       },
       timeRange
     );
@@ -207,8 +212,13 @@ export function Dashboard() {
           // 同步更新配置中的enabled状态
           if (config) {
             const updatedConfig = { ...config, enabled: false };
+            const requestConfig: IUserConfigRequest = {
+              interval: config.interval,
+              timeRange: config.timeRange,
+              enabled: false
+            };
             try {
-              await apiClient.updateConfig(updatedConfig);
+              await apiClient.updateConfig(requestConfig);
             } catch (error) {
               console.error('更新配置失败:', error);
               toast.error(error instanceof Error ? error.message : '更新配置失败');
@@ -248,8 +258,13 @@ export function Dashboard() {
           // 同步更新配置中的enabled状态
           if (config) {
             const updatedConfig = { ...config, enabled: true };
+            const requestConfig: IUserConfigRequest = {
+              interval: config.interval,
+              timeRange: config.timeRange,
+              enabled: true
+            };
             try {
-              await apiClient.updateConfig(updatedConfig);
+              await apiClient.updateConfig(requestConfig);
             } catch (error) {
               console.error('更新配置失败:', error);
               toast.error(error instanceof Error ? error.message : '更新配置失败');
@@ -287,8 +302,8 @@ export function Dashboard() {
       return;
     }
 
-    // 检查Cookie是否存在
-    if (!config?.cookie || config.cookie === '') {
+    // 检查Cookie是否已配置
+    if (!config?.cookie) {
       toast.error('请先配置Cookie');
       return;
     }
@@ -317,8 +332,8 @@ export function Dashboard() {
 
   // 重置积分
   const handleResetCredits = () => {
-    // 检查Cookie是否存在（"已设置"表示已配置，空字符串表示未配置）
-    if (!config?.cookie || config.cookie === '') {
+    // 检查Cookie是否已配置
+    if (!config?.cookie) {
       toast.error('请先配置Cookie');
       return;
     }
@@ -366,7 +381,14 @@ export function Dashboard() {
             </div>
           </div>
           <p className="text-sm text-white/70 mt-1">
-            {!isConnected ? '连接中...' : lastUpdate ? `最后更新: ${lastUpdate.toLocaleTimeString()}` : '请启用监控或手动刷新获取数据'}
+            {!config?.cookie 
+              ? '请先配置Cookie' 
+              : !isConnected 
+                ? '连接中...' 
+                : lastUpdate 
+                  ? `最后更新: ${lastUpdate.toLocaleTimeString()}` 
+                  : '请启用监控或手动刷新获取数据'
+            }
           </p>
         </div>
 
@@ -376,9 +398,17 @@ export function Dashboard() {
           {creditBalance && (
             <button
               onClick={handleResetCredits}
-              disabled={!config?.cookie || config.cookie === '' || !isConnected}
-              className="text-white bg-white/10 px-3 py-1 rounded-lg backdrop-blur-sm hover:bg-white/20 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white/10"
-              title={!isConnected ? "请等待连接建立" : (!config?.cookie || config.cookie === '') ? "请先配置Cookie" : "点击重置积分（每日仅一次）"}
+              disabled={!config?.cookie || !isConnected}
+              className={`text-white bg-white/10 px-3 py-1 rounded-lg backdrop-blur-sm hover:bg-white/20 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white/10 ${
+                config?.dailyResetUsed 
+                  ? 'shadow-[0_0_15px_rgba(239,68,68,0.5)] border border-red-500/30' // 已重置：更明显的红色光晕
+                  : 'shadow-[0_0_15px_rgba(34,197,94,0.5)] border border-green-500/30' // 未重置：更明显的绿色光晕
+              }`}
+              title={
+                config?.dailyResetUsed 
+                  ? "今日已重置过积分" 
+                  : "点击重置积分（今日可重置）"
+              }
             >
               <div className="text-xs text-white/70">可用积分</div>
               <div className="text-sm font-mono font-bold text-yellow-400">
@@ -392,11 +422,11 @@ export function Dashboard() {
             <span className="text-sm text-white/80 hidden md:block">监控</span>
             <button
               onClick={toggleMonitoring}
-              disabled={!config?.cookie || config.cookie === '' || !isConnected}
+              disabled={!config?.cookie || !isConnected}
               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50 ${
                 isMonitoring ? 'bg-green-500' : 'bg-gray-600'
               }`}
-              title={!isConnected ? "请等待连接建立" : (!config?.cookie || config.cookie === '') ? "请先配置Cookie" : "切换监控状态"}
+              title={!isConnected ? "请等待连接建立" : !config?.cookie ? "请先配置Cookie" : "切换监控状态"}
             >
               <span
                 className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
@@ -411,9 +441,9 @@ export function Dashboard() {
             {/* 手动刷新按钮 */}
             <button
               onClick={handleRefresh}
-              disabled={(!config?.cookie || config.cookie === '') || isRefreshing || !isConnected}
+              disabled={!config?.cookie || isRefreshing || !isConnected}
               className="p-1 text-white/80 hover:text-white hover:bg-white/10 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              title={!isConnected ? "请等待连接建立" : (!config?.cookie || config.cookie === '') ? "请先配置Cookie" : "手动刷新数据"}
+              title={!isConnected ? "请等待连接建立" : !config?.cookie ? "请先配置Cookie" : "手动刷新数据"}
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
             </button>

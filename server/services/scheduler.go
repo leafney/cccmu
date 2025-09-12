@@ -26,6 +26,7 @@ type SchedulerService struct {
 	lastBalance      *models.CreditBalance
 	balanceListeners []chan *models.CreditBalance
 	errorListeners   []chan string
+	resetStatusListeners []chan bool
 }
 
 // NewSchedulerService 创建新的调度服务
@@ -52,6 +53,7 @@ func NewSchedulerService(db *database.BadgerDB) (*SchedulerService, error) {
 		listeners:        make([]chan []models.UsageData, 0),
 		balanceListeners: make([]chan *models.CreditBalance, 0),
 		errorListeners:   make([]chan string, 0),
+		resetStatusListeners: make([]chan bool, 0),
 	}
 
 	return service, nil
@@ -110,8 +112,19 @@ func (s *SchedulerService) Start() error {
 		return fmt.Errorf("创建积分余额定时任务失败: %w", err)
 	}
 
+	// 添加每日0点重置标记的定时任务
+	dailyResetJob, err := s.scheduler.NewJob(
+		gocron.CronJob("0 0 * * *", false), // 每日0点执行
+		gocron.NewTask(s.resetDailyFlags),
+		gocron.WithSingletonMode(gocron.LimitModeReschedule),
+	)
+	if err != nil {
+		return fmt.Errorf("创建每日重置标记定时任务失败: %w", err)
+	}
+
 	log.Printf("使用数据定时任务创建成功，任务ID: %v，间隔: %d秒", usageJob.ID(), s.config.Interval)
 	log.Printf("积分余额定时任务创建成功，任务ID: %v，间隔: %d秒", balanceJob.ID(), s.config.Interval)
+	log.Printf("每日重置标记定时任务创建成功，任务ID: %v", dailyResetJob.ID())
 
 	// 启动调度器
 	s.scheduler.Start()
@@ -247,8 +260,19 @@ func (s *SchedulerService) startWithoutLock() error {
 		return fmt.Errorf("创建积分余额定时任务失败: %w", err)
 	}
 
+	// 添加每日0点重置标记的定时任务
+	dailyResetJob, err := s.scheduler.NewJob(
+		gocron.CronJob("0 0 * * *", false), // 每日0点执行
+		gocron.NewTask(s.resetDailyFlags),
+		gocron.WithSingletonMode(gocron.LimitModeReschedule),
+	)
+	if err != nil {
+		return fmt.Errorf("创建每日重置标记定时任务失败: %w", err)
+	}
+
 	log.Printf("使用数据定时任务重建成功，任务ID: %v，间隔: %d秒", usageJob.ID(), s.config.Interval)
 	log.Printf("积分余额定时任务重建成功，任务ID: %v，间隔: %d秒", balanceJob.ID(), s.config.Interval)
+	log.Printf("每日重置标记定时任务重建成功，任务ID: %v", dailyResetJob.ID())
 
 	s.scheduler.Start()
 	s.isRunning = true
@@ -288,10 +312,17 @@ func (s *SchedulerService) FetchBalanceManually() error {
 func (s *SchedulerService) FetchAllDataManually() error {
 	// 更新配置（只需要更新一次）
 	config, err := s.db.GetConfig()
-	if err == nil {
-		s.config = config
-		s.apiClient.UpdateCookie(config.Cookie)
+	if err != nil {
+		return fmt.Errorf("读取配置失败: %w", err)
 	}
+	
+	// 验证cookie是否已配置
+	if config.Cookie == "" {
+		return fmt.Errorf("Cookie未配置，请先设置Cookie")
+	}
+	
+	s.config = config
+	s.apiClient.UpdateCookie(config.Cookie)
 
 	// 同时获取使用数据和积分余额
 	// 使用goroutine并发获取，提高性能
@@ -318,6 +349,28 @@ func (s *SchedulerService) FetchAllDataManually() error {
 		return errors[0]
 	}
 
+	return nil
+}
+
+// resetDailyFlags 重置每日标记（每天0点执行）
+func (s *SchedulerService) resetDailyFlags() error {
+	// 获取当前配置
+	config, err := s.db.GetConfig()
+	if err != nil {
+		log.Printf("重置每日标记时获取配置失败: %v", err)
+		return err
+	}
+
+	// 简单重置每日标记为false
+	config.DailyResetUsed = false
+
+	// 保存配置
+	if err := s.db.SaveConfig(config); err != nil {
+		log.Printf("重置每日标记时保存配置失败: %v", err)
+		return err
+	}
+
+	log.Println("每日重置标记已重置为false")
 	return nil
 }
 
@@ -405,6 +458,16 @@ func (s *SchedulerService) AddErrorListener() chan string {
 	return listener
 }
 
+// AddResetStatusListener 添加重置状态监听器
+func (s *SchedulerService) AddResetStatusListener() chan bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	listener := make(chan bool, 10)
+	s.resetStatusListeners = append(s.resetStatusListeners, listener)
+	return listener
+}
+
 // RemoveDataListener 移除数据监听器
 func (s *SchedulerService) RemoveDataListener(listener chan []models.UsageData) {
 	s.mu.Lock()
@@ -442,6 +505,20 @@ func (s *SchedulerService) RemoveErrorListener(listener chan string) {
 		if l == listener {
 			close(l)
 			s.errorListeners = append(s.errorListeners[:i], s.errorListeners[i+1:]...)
+			break
+		}
+	}
+}
+
+// RemoveResetStatusListener 移除重置状态监听器
+func (s *SchedulerService) RemoveResetStatusListener(listener chan bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i, l := range s.resetStatusListeners {
+		if l == listener {
+			close(l)
+			s.resetStatusListeners = append(s.resetStatusListeners[:i], s.resetStatusListeners[i+1:]...)
 			break
 		}
 	}
@@ -492,6 +569,33 @@ func (s *SchedulerService) notifyErrorListeners(errorMsg string) {
 	}
 }
 
+// notifyResetStatusListeners 通知所有重置状态监听器
+func (s *SchedulerService) notifyResetStatusListeners(resetStatus bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, listener := range s.resetStatusListeners {
+		select {
+		case listener <- resetStatus:
+			// 重置状态发送成功
+		default:
+			// 通道已满，跳过通知
+		}
+	}
+}
+
+// NotifyResetStatusChange 通知重置状态变化（供外部调用）
+func (s *SchedulerService) NotifyResetStatusChange(resetStatus bool) {
+	s.notifyResetStatusListeners(resetStatus)
+}
+
+// NotifyConfigChange 通知配置更新（供外部调用）
+func (s *SchedulerService) NotifyConfigChange() {
+	// 获取最新数据并通知所有监听器
+	data := s.GetLatestData()
+	s.notifyListeners(data)
+}
+
 // Shutdown 关闭服务
 func (s *SchedulerService) Shutdown() {
 	s.Stop()
@@ -507,8 +611,12 @@ func (s *SchedulerService) Shutdown() {
 	for _, listener := range s.errorListeners {
 		close(listener)
 	}
+	for _, listener := range s.resetStatusListeners {
+		close(listener)
+	}
 	s.listeners = nil
 	s.balanceListeners = nil
 	s.errorListeners = nil
+	s.resetStatusListeners = nil
 	s.mu.Unlock()
 }

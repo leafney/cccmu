@@ -31,32 +31,17 @@ func (h *ConfigHandler) GetConfig(c *fiber.Ctx) error {
 		return c.Status(500).JSON(models.Error(500, "获取配置失败", err))
 	}
 
-	// 不返回敏感的Cookie信息到前端，只返回是否已设置
-	safeConfig := &models.UserConfig{
-		Cookie:    "", // 不返回实际Cookie值
-		Interval:  config.Interval,
-		TimeRange: config.TimeRange,
-		Enabled:   config.Enabled,
-	}
-
-	// 如果Cookie不为空，设置一个标识
-	if config.Cookie != "" {
-		safeConfig.Cookie = "已设置"
-	}
-
-	return c.JSON(models.Success(safeConfig))
+	// 转换为API响应格式，Cookie字段自动转为布尔值
+	responseConfig := config.ToResponse()
+	
+	return c.JSON(models.Success(responseConfig))
 }
 
 // UpdateConfig 更新配置
 func (h *ConfigHandler) UpdateConfig(c *fiber.Ctx) error {
-	var newConfig models.UserConfig
-	if err := c.BodyParser(&newConfig); err != nil {
+	var requestConfig models.UserConfigRequest
+	if err := c.BodyParser(&requestConfig); err != nil {
 		return c.Status(400).JSON(models.Error(400, "请求参数错误", err))
-	}
-
-	// 验证配置
-	if err := newConfig.Validate(); err != nil {
-		return c.Status(400).JSON(models.Error(400, "配置验证失败", err))
 	}
 
 	// 获取当前配置
@@ -66,13 +51,29 @@ func (h *ConfigHandler) UpdateConfig(c *fiber.Ctx) error {
 		currentConfig = models.GetDefaultConfig()
 	}
 
-	// 如果新配置的Cookie为空但不是"已设置"标识，保持原有Cookie
-	if newConfig.Cookie == "" || newConfig.Cookie == "已设置" {
-		newConfig.Cookie = currentConfig.Cookie
+	// 构建新的配置，保留内部字段
+	newConfig := &models.UserConfig{
+		Cookie:                  currentConfig.Cookie, // 默认保持原有Cookie
+		Interval:                requestConfig.Interval,
+		TimeRange:               requestConfig.TimeRange,
+		Enabled:                 requestConfig.Enabled,
+		LastCookieValidTime:     currentConfig.LastCookieValidTime,
+		CookieValidationInterval: currentConfig.CookieValidationInterval,
+		DailyResetUsed:          currentConfig.DailyResetUsed,
+	}
+
+	// 如果请求中包含新的Cookie，则更新（使用指针判断是否设置了Cookie字段）
+	if requestConfig.Cookie != nil {
+		newConfig.Cookie = *requestConfig.Cookie
+	}
+
+	// 验证配置
+	if err := newConfig.Validate(); err != nil {
+		return c.Status(400).JSON(models.Error(400, "配置验证失败", err))
 	}
 
 	// 更新调度器配置
-	if err := h.scheduler.UpdateConfig(&newConfig); err != nil {
+	if err := h.scheduler.UpdateConfig(newConfig); err != nil {
 		log.Printf("更新调度器配置失败: %v", err)
 		return c.Status(500).JSON(models.Error(500, "更新配置失败", err))
 	}
@@ -80,14 +81,27 @@ func (h *ConfigHandler) UpdateConfig(c *fiber.Ctx) error {
 	log.Printf("配置已更新: 间隔=%d秒, 时间范围=%d分钟, 启用=%v", 
 		newConfig.Interval, newConfig.TimeRange, newConfig.Enabled)
 
+	// 通过SSE通知前端配置已更新
+	h.scheduler.NotifyConfigChange()
+
 	return c.JSON(models.SuccessMessage("配置更新成功"))
 }
 
 // ClearCookie 清除Cookie
 func (h *ConfigHandler) ClearCookie(c *fiber.Ctx) error {
-	// 清除数据库中的Cookie
-	if err := h.db.ClearCookie(); err != nil {
-		log.Printf("清除Cookie失败: %v", err)
+	// 获取当前配置
+	config, err := h.db.GetConfig()
+	if err != nil {
+		log.Printf("获取配置失败: %v", err)
+		return c.Status(500).JSON(models.Error(500, "获取配置失败", err))
+	}
+
+	// 清除Cookie
+	config.Cookie = ""
+
+	// 保存更新的配置
+	if err := h.db.SaveConfig(config); err != nil {
+		log.Printf("保存清除后的配置失败: %v", err)
 		return c.Status(500).JSON(models.Error(500, "清除Cookie失败", err))
 	}
 

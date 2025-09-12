@@ -1,4 +1,4 @@
-import type { IUserConfig, IAPIResponse, IUsageData, ICreditBalance } from '../types';
+import type { IUserConfig, IUserConfigRequest, IAPIResponse, IUsageData, ICreditBalance } from '../types';
 
 const API_BASE = '/api';
 const DEFAULT_TIMEOUT = 30000; // 30秒超时
@@ -47,7 +47,7 @@ class APIClient {
   }
 
   // 更新配置
-  async updateConfig(config: Partial<IUserConfig>): Promise<IAPIResponse> {
+  async updateConfig(config: IUserConfigRequest): Promise<IAPIResponse> {
     return this.request('/config', {
       method: 'PUT',
       body: JSON.stringify(config),
@@ -101,6 +101,7 @@ class APIClient {
     onBalanceUpdate?: (balance: ICreditBalance) => void,
     onError?: (error: Event) => void, 
     onOpen?: () => void,
+    onResetStatusUpdate?: (resetUsed: boolean) => void,
     timeRange: number = 60
   ): EventSource {
     const eventSource = new EventSource(`${API_BASE}/usage/stream?minutes=${timeRange}`);
@@ -144,6 +145,18 @@ class APIClient {
         }
       } catch (error) {
         console.error('解析错误信息失败:', error, event.data);
+      }
+    });
+
+    eventSource.addEventListener('reset_status', (event) => {
+      try {
+        const resetData = JSON.parse(event.data);
+        console.debug('收到重置状态更新:', resetData);
+        if (onResetStatusUpdate) {
+          onResetStatusUpdate(resetData.resetUsed);
+        }
+      } catch (error) {
+        console.error('解析重置状态数据失败:', error, event.data);
       }
     });
 

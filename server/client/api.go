@@ -158,7 +158,6 @@ func (c *ClaudeAPIClient) FetchCreditBalance() (*models.CreditBalance, error) {
 	}, nil
 }
 
-
 // convertToUsageData 转换API数据为内部数据格式
 func (c *ClaudeAPIClient) convertToUsageData(apiData []ClaudeUsageData) []models.UsageData {
 	var usageData []models.UsageData
@@ -187,3 +186,56 @@ func (c *ClaudeAPIClient) convertToUsageData(apiData []ClaudeUsageData) []models
 	return usageData
 }
 
+// ClaudeResetCreditsResponse Claude重置积分API响应
+type ClaudeResetCreditsResponse struct {
+	Success        bool   `json:"success"`
+	BalanceBefore  string `json:"balanceBefore"`
+	BalanceAfter   string `json:"balanceAfter"`
+	ResetAmount    string `json:"resetAmount"`
+	UsedCount      int    `json:"usedCount"`
+	MaxCount       int    `json:"maxCount"`
+	RemainingCount int    `json:"remainingCount"`
+}
+
+// ResetCredits 重置积分
+func (c *ClaudeAPIClient) ResetCredits() (bool, string, error) {
+	if c.cookie == "" {
+		return false, "", fmt.Errorf("Cookie为空")
+	}
+
+	resp, err := c.client.R().
+		SetHeader("Cookie", c.cookie).
+		SetHeader("Referer", "https://www.aicodemirror.com/dashboard").
+		SetHeader("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36").
+		SetHeader("Accept", "application/json, text/plain, */*").
+		SetHeader("Content-Type", "application/json").
+		// SetDebug(true).
+		Post("https://www.aicodemirror.com/api/user/credits/reset")
+
+	if err != nil {
+		return false, "", fmt.Errorf("HTTP请求失败: %w", err)
+	}
+
+	if resp.StatusCode() == 401 {
+		return false, "", fmt.Errorf("Cookie无效或已过期")
+	}
+
+	// 通知成功请求，更新Cookie验证时间戳
+	c.notifySuccessfulRequest()
+
+	// 处理不同状态码
+	switch resp.StatusCode() {
+	case 200:
+		// 重置成功
+		resetInfo := fmt.Sprintf("重置成功，API响应: %s", string(resp.Body()))
+		return true, resetInfo, nil
+
+	case 404:
+		// 今日已重置过，也视为成功状态
+		resetInfo := "今日已重置过积分，重置状态有效"
+		return true, resetInfo, nil
+
+	default:
+		return false, "", fmt.Errorf("HTTP状态码错误: %d, 响应: %s", resp.StatusCode(), string(resp.Body()))
+	}
+}

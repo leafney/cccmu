@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Save, Settings, X, Trash2 } from 'lucide-react';
-import type { IUserConfig } from '../types';
+import type { IUserConfig, IUserConfigRequest } from '../types';
 import { apiClient } from '../api/client';
 
 interface SettingsModalProps {
@@ -11,11 +11,13 @@ interface SettingsModalProps {
 
 export function SettingsModal({ isOpen, onClose, onConfigUpdate }: SettingsModalProps) {
   const [config, setConfig] = useState<IUserConfig>({
-    cookie: '',
+    cookie: false,
     interval: 60,
     timeRange: 60,
-    enabled: false
+    enabled: false,
+    dailyResetUsed: false
   });
+  const [cookieInput, setCookieInput] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -32,6 +34,8 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate }: SettingsModal
       const response = await apiClient.getConfig();
       if (response.data) {
         setConfig(response.data);
+        // 如果已配置cookie，显示占位符，否则清空输入框
+        setCookieInput(response.data.cookie ? '' : '');
       }
     } catch (error) {
       console.error('加载配置失败:', error);
@@ -42,9 +46,29 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate }: SettingsModal
   const handleSaveConfig = async () => {
     try {
       setSaving(true);
-      await apiClient.updateConfig(config);
+      // 构建请求配置，包含真实的cookie字符串
+      const requestConfig: IUserConfigRequest = {
+        interval: config.interval,
+        timeRange: config.timeRange,
+        enabled: config.enabled
+      };
+      
+      // 只有在输入了新的Cookie时才发送Cookie字段
+      if (cookieInput && cookieInput.trim() !== '') {
+        requestConfig.cookie = cookieInput.trim();
+      }
+      
+      await apiClient.updateConfig(requestConfig);
+      
+      // 更新本地状态为boolean值
+      const updatedConfig = {
+        ...config,
+        cookie: (cookieInput && cookieInput.trim() !== '') ? true : config.cookie // 只有输入了新Cookie才更新状态
+      };
+      setConfig(updatedConfig);
+      
       showMessage('success', '配置保存成功');
-      onConfigUpdate?.(config);
+      onConfigUpdate?.(updatedConfig);
     } catch (error) {
       console.error('保存配置失败:', error);
       showMessage('error', '保存配置失败');
@@ -59,8 +83,9 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate }: SettingsModal
       await apiClient.clearCookie();
       
       // 更新本地状态
-      const updatedConfig = { ...config, cookie: '' };
+      const updatedConfig = { ...config, cookie: false };
       setConfig(updatedConfig);
+      setCookieInput('');
       
       showMessage('success', 'Cookie已清除，监控已停止');
       onConfigUpdate?.(updatedConfig);
@@ -118,12 +143,12 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate }: SettingsModal
               <div className="flex gap-2">
                 <input
                   type="password"
-                  placeholder="请输入 ACM 网站的Cookie"
+                  placeholder={config.cookie ? "Cookie已设置，留空不修改" : "请输入 ACM 网站的Cookie"}
                   className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200"
-                  value={config.cookie === '已设置' ? '' : config.cookie}
-                  onChange={(e) => updateConfig('cookie', e.target.value)}
+                  value={cookieInput}
+                  onChange={(e) => setCookieInput(e.target.value)}
                 />
-                {config.cookie && config.cookie !== '' && (
+                {config.cookie && (
                   <button
                     onClick={handleClearCookie}
                     disabled={clearing}
@@ -135,7 +160,7 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate }: SettingsModal
                   </button>
                 )}
               </div>
-              {config.cookie === '已设置' && (
+              {config.cookie && (
                 <p className="text-sm text-green-600 mt-1.5 flex items-center">
                   <svg className="w-4 h-4 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
