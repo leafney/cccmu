@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io/fs"
 	"log"
@@ -15,6 +14,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
 	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/spf13/pflag"
 
 	"github.com/leafney/cccmu/server/database"
 	"github.com/leafney/cccmu/server/handlers"
@@ -36,10 +36,11 @@ func main() {
 	var port string
 	var enableLog bool
 	var showVersion bool
-	flag.StringVar(&port, "port", "", "服务器端口号（例如: 8080 或 :8080）")
-	flag.BoolVar(&enableLog, "log", false, "启用详细日志输出")
-	flag.BoolVar(&showVersion, "v", false, "显示版本信息")
-	flag.Parse()
+	
+	pflag.StringVarP(&port, "port", "p", "", "服务器端口号（例如: 8080 或 :8080）")
+	pflag.BoolVarP(&enableLog, "log", "l", false, "启用详细日志输出")
+	pflag.BoolVarP(&showVersion, "version", "v", false, "显示版本信息")
+	pflag.Parse()
 
 	// 如果请求版本信息，显示并退出
 	if showVersion {

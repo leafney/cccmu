@@ -5,6 +5,7 @@ BINARY_NAME=cccmu
 FRONTEND_DIR=web
 BACKEND_DIR=server
 BUILD_DIR=dist
+BIN_DIR=bin
 
 # 版本信息
 VERSION ?= $(shell git describe --tags --exact-match 2>/dev/null || git rev-parse --short HEAD)
@@ -36,6 +37,11 @@ help:
 	@echo "  run            - 运行应用（默认端口8080）"
 	@echo "  run-debug      - 运行应用并开启调试日志"
 	@echo "  run-port       - 运行应用（端口9090 + 调试日志）"
+	@echo ""
+	@echo "命令行参数:"
+	@echo "  -p, --port     - 指定端口号（例如: -p 8080 或 --port :8080）"
+	@echo "  -l, --log      - 启用详细日志输出"
+	@echo "  -v, --version  - 显示版本信息"
 	@echo ""
 	@echo "工具相关:"
 	@echo "  clean          - 清理构建文件"
@@ -71,28 +77,30 @@ build-backend: build-frontend
 	@echo "准备embed静态文件..."
 	@rm -rf $(BACKEND_DIR)/web/dist
 	@cp -r $(FRONTEND_DIR)/dist $(BACKEND_DIR)/web/
+	@echo "创建bin目录..."
+	@mkdir -p $(BIN_DIR)
 	@echo "编译后端二进制文件..."
-	cd $(BACKEND_DIR) && go mod tidy && go build -ldflags="$(LDFLAGS)" -o ../$(BINARY_NAME) main.go
+	cd $(BACKEND_DIR) && go mod tidy && go build -ldflags="$(LDFLAGS)" -o ../$(BIN_DIR)/$(BINARY_NAME) main.go
 
 .PHONY: build
 build: build-backend
-	@echo "构建完成: $(BINARY_NAME)"
+	@echo "构建完成: $(BIN_DIR)/$(BINARY_NAME)"
 
 # 运行相关
 .PHONY: run
 run:
 	@echo "启动应用..."
-	./$(BINARY_NAME)
+	./$(BIN_DIR)/$(BINARY_NAME)
 
 .PHONY: run-debug
 run-debug:
 	@echo "启动应用（开启调试日志）..."
-	./$(BINARY_NAME) --log
+	./$(BIN_DIR)/$(BINARY_NAME) -l
 
 .PHONY: run-port
 run-port:
 	@echo "启动应用（自定义端口9090）..."
-	./$(BINARY_NAME) --port 9090 --log
+	./$(BIN_DIR)/$(BINARY_NAME) -p 9090 -l
 
 # 工具命令
 .PHONY: clean
@@ -100,7 +108,7 @@ clean:
 	@echo "清理构建文件..."
 	@rm -rf $(FRONTEND_DIR)/dist
 	@rm -rf $(BACKEND_DIR)/web/dist
-	@rm -f $(BINARY_NAME)
+	@rm -rf $(BIN_DIR)
 	@rm -rf $(BUILD_DIR)
 	@echo "清理完成"
 

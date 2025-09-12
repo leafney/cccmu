@@ -48,3 +48,4 @@ logs/
 # Temp files
 *.tmp
 temp/
+bin/
