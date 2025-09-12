@@ -224,6 +224,21 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate }: SettingsModal
                 </div>
               </div>
             )}
+
+            {/* A社官方状态链接 */}
+            <div className="mt-4 pt-4 border-t border-gray-200 text-center">
+              <p className="text-xs text-gray-500">
+                A社官方{' '}
+                <a 
+                  href="https://status.anthropic.com/" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:text-blue-700 hover:underline font-medium transition-colors"
+                >
+                  Status
+                </a>
+              </p>
+            </div>
           </div>
         </div>
       </div>
