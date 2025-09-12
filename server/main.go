@@ -2,11 +2,13 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 
 	"github.com/gofiber/fiber/v2"
@@ -21,13 +23,32 @@ import (
 	"github.com/leafney/cccmu/server/web"
 )
 
+// 版本信息变量，通过编译时注入
+var (
+	Version   = "dev"
+	GitCommit = "unknown"
+	BuildTime = "unknown"
+	GoVersion = runtime.Version()
+)
+
 func main() {
 	// 解析命令行参数
 	var port string
 	var enableLog bool
+	var showVersion bool
 	flag.StringVar(&port, "port", "", "服务器端口号（例如: 8080 或 :8080）")
 	flag.BoolVar(&enableLog, "log", false, "启用详细日志输出")
+	flag.BoolVar(&showVersion, "v", false, "显示版本信息")
 	flag.Parse()
+
+	// 如果请求版本信息，显示并退出
+	if showVersion {
+		fmt.Printf("Version:   %s\n", Version)
+		fmt.Printf("GitCommit: %s\n", GitCommit)
+		fmt.Printf("BuildTime: %s\n", BuildTime)
+		fmt.Printf("GoVersion: %s\n", GoVersion)
+		return
+	}
 
 	// 初始化日志系统
 	utils.InitLogger(enableLog)

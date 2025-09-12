@@ -6,6 +6,17 @@ FRONTEND_DIR=web
 BACKEND_DIR=server
 BUILD_DIR=dist
 
+# 版本信息
+VERSION ?= $(shell git describe --tags --exact-match 2>/dev/null || git rev-parse --short HEAD)
+GIT_COMMIT := $(shell git rev-parse --short HEAD)
+BUILD_TIME := $(shell date '+%Y-%m-%d %H:%M:%S')
+
+# 编译参数
+LDFLAGS := -s -w
+LDFLAGS += -X 'main.Version=$(VERSION)'
+LDFLAGS += -X 'main.GitCommit=$(GIT_COMMIT)'
+LDFLAGS += -X 'main.BuildTime=$(BUILD_TIME)'
+
 # 默认目标
 .PHONY: help
 help:
@@ -31,6 +42,7 @@ help:
 	@echo "  test           - 运行测试"
 	@echo "  fmt            - 格式化代码"
 	@echo "  lint           - 代码检查"
+	@echo "  version        - 显示版本信息"
 
 # 开发环境
 .PHONY: dev-frontend
@@ -60,7 +72,7 @@ build-backend: build-frontend
 	@rm -rf $(BACKEND_DIR)/web/dist
 	@cp -r $(FRONTEND_DIR)/dist $(BACKEND_DIR)/web/
 	@echo "编译后端二进制文件..."
-	cd $(BACKEND_DIR) && go mod tidy && go build -ldflags="-s -w" -o ../$(BINARY_NAME) main.go
+	cd $(BACKEND_DIR) && go mod tidy && go build -ldflags="$(LDFLAGS)" -o ../$(BINARY_NAME) main.go
 
 .PHONY: build
 build: build-backend
@@ -120,3 +132,10 @@ install:
 	cd $(BACKEND_DIR) && go mod tidy
 	@echo "安装前端依赖..."
 	cd $(FRONTEND_DIR) && bun install
+
+# 版本信息
+.PHONY: version
+version:
+	@echo "Version:   $(VERSION)"
+	@echo "GitCommit: $(GIT_COMMIT)"
+	@echo "BuildTime: $(BUILD_TIME)"
