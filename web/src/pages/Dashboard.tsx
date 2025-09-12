@@ -367,24 +367,27 @@ export function Dashboard() {
             </button>
           </div>
 
-          {/* 手动刷新按钮 */}
-          <button
-            onClick={handleRefresh}
-            disabled={(!config?.cookie || config.cookie === '') || isRefreshing || !isConnected}
-            className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            title={!isConnected ? "请等待连接建立" : (!config?.cookie || config.cookie === '') ? "请先配置Cookie" : "手动刷新数据"}
-          >
-            <RefreshCw className={`w-5 h-5 ${isRefreshing ? 'animate-spin' : ''}`} />
-          </button>
+          {/* 图标按钮组 - 竖向排列 */}
+          <div className="flex flex-col space-y-1.5">
+            {/* 手动刷新按钮 */}
+            <button
+              onClick={handleRefresh}
+              disabled={(!config?.cookie || config.cookie === '') || isRefreshing || !isConnected}
+              className="p-1 text-white/80 hover:text-white hover:bg-white/10 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title={!isConnected ? "请等待连接建立" : (!config?.cookie || config.cookie === '') ? "请先配置Cookie" : "手动刷新数据"}
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+            </button>
 
-          {/* 设置按钮 */}
-          <button
-            onClick={() => setShowSettings(true)}
-            className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-            title="打开设置"
-          >
-            <Settings className="w-5 h-5" />
-          </button>
+            {/* 设置按钮 */}
+            <button
+              onClick={() => setShowSettings(true)}
+              className="p-1 text-white/80 hover:text-white hover:bg-white/10 rounded-md transition-colors"
+              title="打开设置"
+            >
+              <Settings className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       </div>
 
