@@ -116,6 +116,9 @@ make build
 
 # 查看帮助信息
 ./cccmu -h
+
+# 查看版本信息
+./cccmu -v
 ```
 
 默认访问地址: `http://localhost:8080`
@@ -126,6 +129,7 @@ make build
 |------|------|------|
 | `--port` / `-port` | 指定服务器端口号 | `./cccmu --port 9090` |
 | `--log` | 启用详细日志输出（用于调试和维护） | `./cccmu --log` |
+| `-v` | 显示版本信息并退出 | `./cccmu -v` |
 | `--help` / `-h` | 显示帮助信息 | `./cccmu --help` |
 
 **日志控制说明：**
@@ -160,6 +164,28 @@ make build
 # 最终使用端口 9090（命令行参数优先）
 PORT=8080 ./cccmu -port 9090
 ```
+
+#### 版本信息显示
+
+使用 `-v` 参数可以查看应用的详细版本信息：
+
+```bash
+./cccmu -v
+```
+
+输出示例：
+```
+Version:   v1.0.0
+GitCommit: c3726fb  
+BuildTime: 2025-09-12 15:30:45
+GoVersion: go1.23.1
+```
+
+**版本信息说明：**
+- **Version**: 应用版本号（Git标签或commit短哈希）
+- **GitCommit**: Git提交的短哈希值
+- **BuildTime**: 构建时间（本地时间）
+- **GoVersion**: 编译时使用的Go语言版本
 
 ## ⚙️ 配置说明
 

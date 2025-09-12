@@ -3,7 +3,7 @@ import { UsageChart } from '../components/UsageChart';
 import { SettingsModal } from '../components/SettingsModal';
 import type { IUsageData, IUserConfig, ICreditBalance } from '../types';
 import { apiClient } from '../api/client';
-import { Settings, Wifi, WifiOff, RefreshCw } from 'lucide-react';
+import { Settings, Wifi, WifiOff, RefreshCw, BarChart3 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export function Dashboard() {
@@ -392,7 +392,9 @@ export function Dashboard() {
           {usageData.length === 0 ? (
             <div className="h-full flex items-center justify-center">
               <div className="text-center text-white/60">
-                <div className="text-6xl mb-4">📊</div>
+                <div className="mb-6">
+                  <BarChart3 className="w-16 h-16 mx-auto text-white/40" />
+                </div>
                 <h2 className="text-xl mb-2">暂无数据</h2>
                 <p className="text-sm">
                   {!isConnected ? '请等待连接建立' : '请启用监控或点击刷新按钮获取数据'}
