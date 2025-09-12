@@ -318,9 +318,19 @@ export function Dashboard() {
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900">
       {/* 顶部控制栏 */}
       <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between p-4 md:p-6">
-        {/* 左侧标题 */}
+        {/* 左侧标题和连接状态 */}
         <div className="text-white">
-          <h1 className="text-xl md:text-2xl font-bold">Claude 积分监控</h1>
+          <div className="flex items-center space-x-3">
+            <h1 className="text-xl md:text-2xl font-bold">Claude 积分监控</h1>
+            {/* 连接状态指示 */}
+            <div className="flex items-center" title={isConnected ? "已连接" : "连接断开"}>
+              {isConnected ? (
+                <Wifi className="w-5 h-5 text-green-400" />
+              ) : (
+                <WifiOff className="w-5 h-5 text-red-400" />
+              )}
+            </div>
+          </div>
           <p className="text-sm text-white/70 mt-1">
             {!isConnected ? '连接中...' : lastUpdate ? `最后更新: ${lastUpdate.toLocaleTimeString()}` : '请启用监控或手动刷新获取数据'}
           </p>
@@ -337,14 +347,6 @@ export function Dashboard() {
               </div>
             </div>
           )}
-          {/* 连接状态指示 */}
-          <div className="flex items-center" title={isConnected ? "已连接" : "连接断开"}>
-            {isConnected ? (
-              <Wifi className="w-5 h-5 text-green-400" />
-            ) : (
-              <WifiOff className="w-5 h-5 text-red-400" />
-            )}
-          </div>
 
           {/* 监控状态开关 */}
           <div className="flex items-center space-x-2">
