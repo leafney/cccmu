@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  cccmu:
+    image: ghcr.io/leafney/cccmu:latest
+    container_name: cccmu
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/.b
+    environment:
+      - TZ=Asia/Shanghai
+    restart: unless-stopped

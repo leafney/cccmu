@@ -119,6 +119,16 @@ func main() {
 		api.Get("/usage/data", sseHandler.GetUsageData)
 	}
 
+	// 健康检查接口
+	app.Get("/health", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"status":  "ok",
+			"version": Version,
+			"commit":  GitCommit,
+			"time":    BuildTime,
+		})
+	})
+
 	// 静态文件服务 - 使用embed嵌入的静态文件
 	log.Println("使用embed嵌入的静态文件")
 

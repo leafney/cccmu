@@ -4,7 +4,7 @@
 
 ## 📸 项目截图
 
-![ACM Claude 积分监控系统界面](docs/image2.png)
+![ACM Claude 积分监控系统界面](docs/image3.png)
 
 *实时监控 ACM Claude 积分使用量，支持多时间范围查看和趋势分析*
 
@@ -12,6 +12,7 @@
 
 - **实时监控**: 通过 SSE (Server-Sent Events) 实时展示积分使用量变化曲线
 - **积分余额显示**: 实时展示当前剩余积分数量，支持自动刷新
+- **积分重置功能**: 支持手动重置每日积分，自动重置功能开发中
 - **可视化图表**: 使用 ECharts 生成美观的折线图展示积分使用趋势
 - **多时间范围**: 支持查看最近 1小时、2小时、3小时、6小时、12小时、24小时的使用情况
 - **多模型对比**: 支持同时展示不同 Claude 模型的积分使用情况
@@ -62,7 +63,48 @@ cccmu/
 └── README.md
 ```
 
-## 🔧 快速开始
+## 🚀 快速部署
+
+### 使用 Docker (推荐)
+
+```bash
+# 拉取最新镜像
+docker pull ghcr.io/leafney/cccmu:latest
+
+# 运行容器
+docker run -d \
+  --name cccmu \
+  -p 8080:8080 \
+  -v $(pwd)/data:/app/.b \
+  ghcr.io/leafney/cccmu:latest
+
+# 或使用 Docker Compose
+docker-compose up -d
+```
+
+访问 http://localhost:8080 开始使用。
+
+### 使用二进制文件
+
+从 [Releases](https://github.com/leafney/cccmu/releases) 页面下载对应平台的二进制文件：
+
+```bash
+# Linux/macOS
+chmod +x cccmu-linux-amd64
+./cccmu-linux-amd64
+
+# Windows
+cccmu-windows-amd64.exe
+```
+
+### 支持的平台
+
+- **Docker**: `linux/amd64`, `linux/arm64`
+- **二进制文件**: Windows (amd64), macOS (amd64, arm64), Linux (amd64, arm64)
+
+📖 **详细部署指南**: 查看 [DEPLOY.md](DEPLOY.md) 了解完整的部署选项、配置参数和高级用法。
+
+## 🔧 开发环境
 
 ### 环境要求
 
@@ -99,7 +141,7 @@ make build
 
 构建完成后会生成 `cccmu` 可执行文件，包含完整的前后端应用。
 
-### 运行应用
+### 本地运行
 
 ```bash
 # 使用默认端口 8080 运行

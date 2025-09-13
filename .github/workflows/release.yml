@@ -1,0 +1,230 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  GO_VERSION: '1.23.9'
+  NODE_VERSION: '22'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Docker镜像构建和发布
+  docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            GIT_COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ github.event.head_commit.timestamp }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # 多平台二进制文件构建和发布
+  binary:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        include:
+          # Windows
+          - { goos: "windows", goarch: "amd64", suffix: ".exe" }
+          # macOS
+          - { goos: "darwin", goarch: "amd64", suffix: "" }
+          - { goos: "darwin", goarch: "arm64", suffix: "" }
+          # Linux
+          - { goos: "linux", goarch: "amd64", suffix: "" }
+          - { goos: "linux", goarch: "arm64", suffix: "" }
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install bun
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          echo "$HOME/.bun/bin" >> $GITHUB_PATH
+
+      - name: Build frontend
+        run: |
+          cd web
+          bun install
+          bun run build
+
+      - name: Prepare embedded files
+        run: |
+          rm -rf server/web/dist
+          cp -r web/dist server/web/
+
+      - name: Build backend binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          # 确保Go依赖是最新的（go.mod在根目录）
+          go mod tidy
+          
+          # 构建变量
+          VERSION="${{ github.ref_name }}"
+          GIT_COMMIT="${{ github.sha }}"
+          BUILD_TIME="$(date -u '+%Y-%m-%d %H:%M:%S')"
+          
+          # 构建二进制文件（指定正确的main.go路径）
+          go build \
+            -ldflags="-s -w -X 'main.Version=${VERSION}' -X 'main.GitCommit=${GIT_COMMIT}' -X 'main.BuildTime=${BUILD_TIME}'" \
+            -o cccmu-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.suffix }} \
+            ./server/main.go
+
+      - name: Install UPX
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y upx-ucl
+
+      - name: Compress binary with UPX
+        run: |
+          # 跳过macOS arm64的压缩，UPX不支持
+          if [ "${{ matrix.goos }}" = "darwin" ] && [ "${{ matrix.goarch }}" = "arm64" ]; then
+            echo "Skipping UPX compression for macOS arm64"
+            mv cccmu-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.suffix }} cccmu-${{ matrix.goos }}-${{ matrix.goarch }}-compressed${{ matrix.suffix }}
+          else
+            upx --best --lzma cccmu-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.suffix }} -o cccmu-${{ matrix.goos }}-${{ matrix.goarch }}-compressed${{ matrix.suffix }}
+          fi
+
+      - name: Calculate checksums
+        run: |
+          sha256sum cccmu-${{ matrix.goos }}-${{ matrix.goarch }}-compressed${{ matrix.suffix }} > cccmu-${{ matrix.goos }}-${{ matrix.goarch }}-compressed${{ matrix.suffix }}.sha256
+
+      - name: Upload binary artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cccmu-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            cccmu-${{ matrix.goos }}-${{ matrix.goarch }}-compressed${{ matrix.suffix }}
+            cccmu-${{ matrix.goos }}-${{ matrix.goarch }}-compressed${{ matrix.suffix }}.sha256
+
+  # 创建GitHub Release
+  release:
+    needs: [docker, binary]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./release-artifacts
+
+      - name: Prepare release files
+        run: |
+          mkdir -p ./release-files
+          find ./release-artifacts -name "cccmu-*-compressed*" -exec cp {} ./release-files/ \;
+          
+          # 重命名文件以便更好的识别
+          cd ./release-files
+          for file in cccmu-*-compressed*; do
+            # 移除 -compressed 后缀
+            new_name=$(echo "$file" | sed 's/-compressed//')
+            mv "$file" "$new_name"
+          done
+          
+          ls -la
+
+      - name: Generate release notes
+        run: |
+          echo "## 🚀 cccmu ${{ github.ref_name }} 发布" > release-notes.md
+          echo "" >> release-notes.md
+          echo "### 📦 下载" >> release-notes.md
+          echo "" >> release-notes.md
+          echo "#### 🐳 Docker 镜像" >> release-notes.md
+          echo '```bash' >> release-notes.md
+          echo "docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}" >> release-notes.md
+          echo '```' >> release-notes.md
+          echo "" >> release-notes.md
+          echo "#### 📋 支持的平台" >> release-notes.md
+          echo "- **Windows**: `cccmu-windows-amd64.exe`" >> release-notes.md
+          echo "- **macOS**: `cccmu-darwin-amd64`, `cccmu-darwin-arm64`" >> release-notes.md  
+          echo "- **Linux**: `cccmu-linux-amd64`, `cccmu-linux-arm64`" >> release-notes.md
+          echo "" >> release-notes.md
+          echo "#### 🏃 快速运行" >> release-notes.md
+          echo '```bash' >> release-notes.md
+          echo "# 下载后直接运行" >> release-notes.md
+          echo "chmod +x cccmu-linux-amd64" >> release-notes.md
+          echo "./cccmu-linux-amd64" >> release-notes.md
+          echo "" >> release-notes.md
+          echo "# 或使用Docker" >> release-notes.md
+          echo "docker run -p 8080:8080 ghcr.io/${{ github.repository }}:${{ github.ref_name }}" >> release-notes.md
+          echo '```' >> release-notes.md
+          echo "" >> release-notes.md
+          echo "### ⚡ 版本信息" >> release-notes.md
+          echo "- **版本**: ${{ github.ref_name }}" >> release-notes.md
+          echo "- **提交**: ${{ github.sha }}" >> release-notes.md
+          echo "- **构建时间**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> release-notes.md
+          echo "" >> release-notes.md
+          echo "### 🔒 文件校验" >> release-notes.md
+          echo "所有二进制文件都提供了 SHA256 校验和，请在下载后验证文件完整性。" >> release-notes.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: cccmu ${{ github.ref_name }}
+          body_path: release-notes.md
+          files: |
+            ./release-files/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

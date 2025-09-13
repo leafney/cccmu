@@ -1,0 +1,60 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+bin/
+dist/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Coverage
+*.out
+
+# Dependencies
+vendor/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Database
+*.db
+.b/
+
+# Logs
+*.log
+
+# Documentation
+docs/
+README.md
+
+# GitHub Actions (will be in the image anyway)
+.github/
+
+# Development files
+Makefile
