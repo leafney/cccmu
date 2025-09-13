@@ -18,6 +18,7 @@ type ClaudeAPIClient struct {
 	client               *resty.Client
 	cookie               string
 	cookieUpdateCallback CookieUpdateCallback
+	cache                *APICache  // API缓存管理器
 }
 
 // NewClaudeAPIClient 创建新的Claude API客户端
@@ -29,10 +30,14 @@ func NewClaudeAPIClient(cookie string) *ClaudeAPIClient {
 		SetRetryMaxWaitTime(20 * time.Second).
 		SetDebug(false) // 开启调试模式
 
+	// 创建缓存管理器
+	cache := NewAPICache()
+
 	return &ClaudeAPIClient{
 		client:               client,
 		cookie:               cookie,
 		cookieUpdateCallback: nil,
+		cache:                cache,
 	}
 }
 
@@ -71,9 +76,18 @@ type ClaudeUsageData struct {
 
 // FetchUsageData 获取积分使用数据
 func (c *ClaudeAPIClient) FetchUsageData() ([]models.UsageData, error) {
-	if c.cookie == "" {
-		return nil, fmt.Errorf("Cookie为空")
+	// 检查缓存
+	if cachedData, cachedErr, found := c.cache.GetCachedUsageData(); found {
+		return cachedData, cachedErr
 	}
+
+	if c.cookie == "" {
+		err := fmt.Errorf("Cookie为空")
+		c.cache.SetCachedUsageData(nil, err)
+		return nil, err
+	}
+
+	utils.Logf("发起API请求: FetchUsageData - 请求使用量数据")
 
 	resp, err := c.client.R().
 		SetHeader("Cookie", c.cookie).
@@ -83,26 +97,39 @@ func (c *ClaudeAPIClient) FetchUsageData() ([]models.UsageData, error) {
 		Get("https://www.aicodemirror.com/api/user/usage")
 
 	if err != nil {
-		return nil, fmt.Errorf("API请求失败: %w", err)
+		apiErr := fmt.Errorf("API请求失败: %w", err)
+		c.cache.SetCachedUsageData(nil, apiErr)
+		return nil, apiErr
 	}
 
 	if resp.StatusCode() == 401 {
+		// 401错误不缓存，直接返回
 		return nil, fmt.Errorf("Cookie无效或已过期")
 	}
 
 	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("API返回错误: %d %s", resp.StatusCode(), resp.Status())
+		apiErr := fmt.Errorf("API返回错误: %d %s", resp.StatusCode(), resp.Status())
+		c.cache.SetCachedUsageData(nil, apiErr)
+		return nil, apiErr
 	}
 
 	var apiResp []ClaudeUsageData
 	if err := json.Unmarshal(resp.Body(), &apiResp); err != nil {
-		return nil, fmt.Errorf("解析响应失败: %w", err)
+		parseErr := fmt.Errorf("解析响应失败: %w", err)
+		c.cache.SetCachedUsageData(nil, parseErr)
+		return nil, parseErr
 	}
 
 	// 通知成功请求，更新Cookie验证时间戳
 	c.notifySuccessfulRequest()
 
-	return c.convertToUsageData(apiResp), nil
+	result := c.convertToUsageData(apiResp)
+	utils.Logf("API请求成功: FetchUsageData - 获取到 %d 条数据记录", len(result))
+	
+	// 缓存成功结果
+	c.cache.SetCachedUsageData(result, nil)
+	
+	return result, nil
 }
 
 // ClaudeCreditsResponse Claude积分API响应
@@ -115,9 +142,18 @@ type ClaudeCreditsResponse struct {
 
 // FetchCreditBalance 获取积分余额
 func (c *ClaudeAPIClient) FetchCreditBalance() (*models.CreditBalance, error) {
-	if c.cookie == "" {
-		return nil, fmt.Errorf("Cookie为空")
+	// 检查缓存
+	if cachedData, cachedErr, found := c.cache.GetCachedBalance(); found {
+		return cachedData, cachedErr
 	}
+
+	if c.cookie == "" {
+		err := fmt.Errorf("Cookie为空")
+		c.cache.SetCachedBalance(nil, err)
+		return nil, err
+	}
+
+	utils.Logf("发起API请求: FetchCreditBalance - 请求积分余额")
 
 	resp, err := c.client.R().
 		SetHeader("Cookie", c.cookie).
@@ -127,15 +163,20 @@ func (c *ClaudeAPIClient) FetchCreditBalance() (*models.CreditBalance, error) {
 		Get("https://www.aicodemirror.com/api/user/credits")
 
 	if err != nil {
-		return nil, fmt.Errorf("获取积分余额请求失败: %w", err)
+		apiErr := fmt.Errorf("获取积分余额请求失败: %w", err)
+		c.cache.SetCachedBalance(nil, apiErr)
+		return nil, apiErr
 	}
 
 	if resp.StatusCode() == 401 {
+		// 401错误不缓存，直接返回
 		return nil, fmt.Errorf("Cookie无效或已过期")
 	}
 
 	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("获取积分余额失败: %d %s", resp.StatusCode(), resp.Status())
+		apiErr := fmt.Errorf("获取积分余额失败: %d %s", resp.StatusCode(), resp.Status())
+		c.cache.SetCachedBalance(nil, apiErr)
+		return nil, apiErr
 	}
 
 	// 添加调试日志（可控制）
@@ -144,7 +185,9 @@ func (c *ClaudeAPIClient) FetchCreditBalance() (*models.CreditBalance, error) {
 	// 解析API返回的数据格式
 	var creditsResp ClaudeCreditsResponse
 	if err := json.Unmarshal(resp.Body(), &creditsResp); err != nil {
-		return nil, fmt.Errorf("解析积分数据失败: %w", err)
+		parseErr := fmt.Errorf("解析积分数据失败: %w", err)
+		c.cache.SetCachedBalance(nil, parseErr)
+		return nil, parseErr
 	}
 
 	utils.Logf("获取到准确的剩余积分: %d", creditsResp.Credits)
@@ -152,10 +195,16 @@ func (c *ClaudeAPIClient) FetchCreditBalance() (*models.CreditBalance, error) {
 	// 通知成功请求，更新Cookie验证时间戳
 	c.notifySuccessfulRequest()
 
-	return &models.CreditBalance{
+	result := &models.CreditBalance{
 		Remaining: creditsResp.Credits,
 		UpdatedAt: time.Now(),
-	}, nil
+	}
+	utils.Logf("API请求成功: FetchCreditBalance - 获取到余额 %d", creditsResp.Credits)
+	
+	// 缓存成功结果
+	c.cache.SetCachedBalance(result, nil)
+
+	return result, nil
 }
 
 // convertToUsageData 转换API数据为内部数据格式
@@ -187,6 +236,7 @@ func (c *ClaudeAPIClient) convertToUsageData(apiData []ClaudeUsageData) []models
 
 	return usageData
 }
+
 
 // ClaudeResetCreditsResponse Claude重置积分API响应
 type ClaudeResetCreditsResponse struct {
