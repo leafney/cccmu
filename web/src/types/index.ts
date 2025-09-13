@@ -1,9 +1,6 @@
 // 积分使用数据
 export interface IUsageData {
   id: number;
-  type: string;
-  endpoint: string;
-  statusCode: number;
   creditsUsed: number;
   createdAt: string;
   model: string;

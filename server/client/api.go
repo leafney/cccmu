@@ -177,9 +177,6 @@ func (c *ClaudeAPIClient) convertToUsageData(apiData []ClaudeUsageData) []models
 
 		usage := models.UsageData{
 			ID:          data.ID,
-			Type:        data.Type,
-			Endpoint:    data.Endpoint,
-			StatusCode:  data.StatusCode,
 			CreditsUsed: data.CreditsUsed,
 			CreatedAt:   createdAt,
 			Model:       data.Model,

@@ -5,9 +5,6 @@ import "time"
 // UsageData 积分使用数据
 type UsageData struct {
 	ID          int       `json:"id"`
-	Type        string    `json:"type"`
-	Endpoint    string    `json:"endpoint"`
-	StatusCode  int       `json:"statusCode"`
 	CreditsUsed int       `json:"creditsUsed"`
 	CreatedAt   time.Time `json:"createdAt"`
 	Model       string    `json:"model"`
