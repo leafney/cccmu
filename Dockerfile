@@ -2,7 +2,7 @@
 # ACM Claude积分监控系统 Docker构建文件
 
 # Stage 1: Build frontend
-FROM oven/bun:1.1.34-alpine AS frontend-builder
+FROM oven/bun:latest AS frontend-builder
 
 WORKDIR /app/web
 
