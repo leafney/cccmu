@@ -32,6 +32,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Get short commit SHA
+        id: vars
+        run: echo "short_sha=${GITHUB_SHA:0:8}" >> $GITHUB_OUTPUT
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -53,7 +57,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ github.ref_name }}
-            GIT_COMMIT=${{ github.sha }}
+            GIT_COMMIT=${{ steps.vars.outputs.short_sha }}
             BUILD_TIME=${{ github.event.head_commit.timestamp }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -89,6 +93,10 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      - name: Get short commit SHA
+        id: vars
+        run: echo "short_sha=${GITHUB_SHA:0:8}" >> $GITHUB_OUTPUT
+
       - name: Install bun
         run: |
           curl -fsSL https://bun.sh/install | bash
@@ -116,7 +124,7 @@ jobs:
           
           # 构建变量
           VERSION="${{ github.ref_name }}"
-          GIT_COMMIT="${{ github.sha }}"
+          GIT_COMMIT="${{ steps.vars.outputs.short_sha }}"
           BUILD_TIME="$(date -u '+%Y-%m-%d %H:%M:%S')"
           
           # 构建二进制文件（指定正确的main.go路径）
@@ -132,9 +140,9 @@ jobs:
 
       - name: Compress binary with UPX
         run: |
-          # 跳过macOS arm64的压缩，UPX不支持
-          if [ "${{ matrix.goos }}" = "darwin" ] && [ "${{ matrix.goarch }}" = "arm64" ]; then
-            echo "Skipping UPX compression for macOS arm64"
+          # 跳过macOS平台的压缩，UPX不支持
+          if [ "${{ matrix.goos }}" = "darwin" ]; then
+            echo "Skipping UPX compression for macOS (${{ matrix.goos }}-${{ matrix.goarch }})"
             mv cccmu-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.suffix }} cccmu-${{ matrix.goos }}-${{ matrix.goarch }}-compressed${{ matrix.suffix }}
           else
             upx --best --lzma cccmu-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.suffix }} -o cccmu-${{ matrix.goos }}-${{ matrix.goarch }}-compressed${{ matrix.suffix }}
@@ -210,7 +218,7 @@ jobs:
           echo "" >> release-notes.md
           echo "### ⚡ 版本信息" >> release-notes.md
           echo "- **版本**: ${{ github.ref_name }}" >> release-notes.md
-          echo "- **提交**: ${{ github.sha }}" >> release-notes.md
+          echo "- **提交**: ${GITHUB_SHA:0:8}" >> release-notes.md
           echo "- **构建时间**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> release-notes.md
           echo "" >> release-notes.md
           echo "### 🔒 文件校验" >> release-notes.md

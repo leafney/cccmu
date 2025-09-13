@@ -2,12 +2,9 @@
 # ACM Claude积分监控系统 Docker构建文件
 
 # Stage 1: Build frontend
-FROM node:22-alpine AS frontend-builder
+FROM oven/bun:1.1.34-alpine AS frontend-builder
 
 WORKDIR /app/web
-
-# Install bun
-RUN npm install -g bun
 
 # Copy frontend source
 COPY web/package.json web/bun.lock ./
@@ -48,8 +45,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # Stage 3: Final runtime image
 FROM alpine:latest
 
-# Install ca-certificates for HTTPS requests
-RUN apk --no-cache add ca-certificates tzdata
+# Install ca-certificates for HTTPS requests and wget for health check
+RUN apk --no-cache add ca-certificates tzdata wget
 
 # Set timezone to Asia/Shanghai
 ENV TZ=Asia/Shanghai
