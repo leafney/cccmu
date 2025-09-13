@@ -151,13 +151,22 @@ jobs:
         run: |
           sha256sum cccmu-${{ matrix.goos }}-${{ matrix.goarch }}-compressed${{ matrix.suffix }} > cccmu-${{ matrix.goos }}-${{ matrix.goarch }}-compressed${{ matrix.suffix }}.sha256
 
+      - name: Create zip package
+        run: |
+          # 重命名文件以移除 -compressed 后缀
+          mv cccmu-${{ matrix.goos }}-${{ matrix.goarch }}-compressed${{ matrix.suffix }} cccmu-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.suffix }}
+          mv cccmu-${{ matrix.goos }}-${{ matrix.goarch }}-compressed${{ matrix.suffix }}.sha256 cccmu-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.suffix }}.sha256
+          
+          # 创建zip包
+          zip -j cccmu-${{ matrix.goos }}-${{ matrix.goarch }}.zip \
+            cccmu-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.suffix }} \
+            cccmu-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.suffix }}.sha256
+
       - name: Upload binary artifacts
         uses: actions/upload-artifact@v4
         with:
           name: cccmu-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: |
-            cccmu-${{ matrix.goos }}-${{ matrix.goarch }}-compressed${{ matrix.suffix }}
-            cccmu-${{ matrix.goos }}-${{ matrix.goarch }}-compressed${{ matrix.suffix }}.sha256
+          path: cccmu-${{ matrix.goos }}-${{ matrix.goarch }}.zip
 
   # 创建GitHub Release
   release:
@@ -177,17 +186,9 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p ./release-files
-          find ./release-artifacts -name "cccmu-*-compressed*" -exec cp {} ./release-files/ \;
+          find ./release-artifacts -name "*.zip" -exec cp {} ./release-files/ \;
           
-          # 重命名文件以便更好的识别
-          cd ./release-files
-          for file in cccmu-*-compressed*; do
-            # 移除 -compressed 后缀
-            new_name=$(echo "$file" | sed 's/-compressed//')
-            mv "$file" "$new_name"
-          done
-          
-          ls -la
+          ls -la ./release-files
 
       - name: Generate release notes
         run: |
@@ -201,13 +202,14 @@ jobs:
           echo '```' >> release-notes.md
           echo "" >> release-notes.md
           echo "#### 📋 支持的平台" >> release-notes.md
-          echo "- **Windows**: `cccmu-windows-amd64.exe`" >> release-notes.md
-          echo "- **macOS**: `cccmu-darwin-amd64`, `cccmu-darwin-arm64`" >> release-notes.md  
-          echo "- **Linux**: `cccmu-linux-amd64`, `cccmu-linux-arm64`" >> release-notes.md
+          echo "- **Windows**: `cccmu-windows-amd64.zip`" >> release-notes.md
+          echo "- **macOS**: `cccmu-darwin-amd64.zip`, `cccmu-darwin-arm64.zip`" >> release-notes.md  
+          echo "- **Linux**: `cccmu-linux-amd64.zip`, `cccmu-linux-arm64.zip`" >> release-notes.md
           echo "" >> release-notes.md
           echo "#### 🏃 快速运行" >> release-notes.md
           echo '```bash' >> release-notes.md
-          echo "# 下载后直接运行" >> release-notes.md
+          echo "# 下载zip包并解压运行" >> release-notes.md
+          echo "unzip cccmu-linux-amd64.zip" >> release-notes.md
           echo "chmod +x cccmu-linux-amd64" >> release-notes.md
           echo "./cccmu-linux-amd64" >> release-notes.md
           echo "" >> release-notes.md
@@ -221,7 +223,13 @@ jobs:
           echo "- **构建时间**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> release-notes.md
           echo "" >> release-notes.md
           echo "### 🔒 文件校验" >> release-notes.md
-          echo "所有二进制文件都提供了 SHA256 校验和，请在下载后验证文件完整性。" >> release-notes.md
+          echo "每个 zip 包中都包含对应的 SHA256 校验文件，请解压后验证二进制文件完整性：" >> release-notes.md
+          echo '```bash' >> release-notes.md
+          echo "# 解压zip包" >> release-notes.md
+          echo "unzip cccmu-linux-amd64.zip" >> release-notes.md
+          echo "# 验证文件完整性" >> release-notes.md
+          echo "sha256sum -c cccmu-linux-amd64.sha256" >> release-notes.md
+          echo '```' >> release-notes.md
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
