@@ -44,8 +44,6 @@ jobs:
           tags: |
             type=ref,event=tag
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -55,6 +53,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
           build-args: |
             VERSION=${{ github.ref_name }}
             GIT_COMMIT=${{ steps.vars.outputs.short_sha }}
