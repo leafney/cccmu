@@ -163,6 +163,11 @@ func (c *ClaudeAPIClient) convertToUsageData(apiData []ClaudeUsageData) []models
 	var usageData []models.UsageData
 
 	for _, data := range apiData {
+		// 筛选仅处理同时满足 type="USAGE" 且 endpoint="v1/messages" 的数据
+		if data.Type != "USAGE" || data.Endpoint != "v1/messages" {
+			continue
+		}
+
 		// 解析时间字符串
 		createdAt, err := time.Parse(time.RFC3339, data.CreatedAt)
 		if err != nil {
