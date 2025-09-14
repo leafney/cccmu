@@ -97,7 +97,7 @@
 
 ## 重置积分
 
-- 接口地址：https://www.aicodemirror.com/api/user/credits/reset
+- 接口地址：https://www.aicodemirror.com/api/user/credit-reset
 - 接口方法：POST
 - 请求参数：
   - cookie：用户在前端设置页面中添加的cookie信息
