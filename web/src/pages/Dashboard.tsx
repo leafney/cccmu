@@ -17,6 +17,7 @@ export function Dashboard() {
   const [creditBalance, setCreditBalance] = useState<ICreditBalance | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [isAutoResetEnabled, setIsAutoResetEnabled] = useState(false);
   const retryTimeoutRef = useRef<number | null>(null);
 
   // 建立SSE连接
@@ -193,6 +194,7 @@ export function Dashboard() {
         try {
           try {
             await apiClient.stopTask();
+            toast.success('已关闭动态监控，请手动刷新获取最新数据');
           } catch (error) {
             console.error('停止监控失败:', error);
             toast.error(error instanceof Error ? error.message : '停止监控失败');
@@ -239,6 +241,7 @@ export function Dashboard() {
         try {
           try {
             await apiClient.startTask();
+            toast.success('已开启动态监控，将自动获取最新数据');
           } catch (error) {
             console.error('启动监控失败:', error);
             toast.error(error instanceof Error ? error.message : '启动监控失败');
@@ -363,6 +366,19 @@ export function Dashboard() {
     setShowConfirmDialog(false);
   };
 
+  // 切换自动重置状态
+  const toggleAutoReset = async () => {
+    try {
+      // TODO: 实现自动重置API调用
+      setIsAutoResetEnabled(!isAutoResetEnabled);
+      // 这里将来需要调用后端API来设置自动重置状态
+      toast.success(isAutoResetEnabled ? '已关闭每日积分自动重置功能' : '已开启每日积分自动重置功能');
+    } catch (error) {
+      console.error('切换自动重置状态失败:', error);
+      toast.error('操作失败，请稍后重试');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900">
       {/* 顶部控制栏 */}
@@ -400,14 +416,18 @@ export function Dashboard() {
               onClick={handleResetCredits}
               disabled={!config?.cookie || !isConnected}
               className={`text-white bg-white/10 px-3 py-1 rounded-lg backdrop-blur-sm hover:bg-white/20 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white/10 ${
-                config?.dailyResetUsed 
-                  ? 'shadow-[0_0_15px_rgba(239,68,68,0.5)] border border-red-500/30' // 已重置：更明显的红色光晕
-                  : 'shadow-[0_0_15px_rgba(34,197,94,0.5)] border border-green-500/30' // 未重置：更明显的绿色光晕
+                isAutoResetEnabled
+                  ? 'shadow-[0_0_15px_rgba(168,85,247,0.5)] border border-purple-500/30' // 自动重置：紫色光晕
+                  : config?.dailyResetUsed 
+                    ? 'shadow-[0_0_15px_rgba(239,68,68,0.5)] border border-red-500/30' // 已重置：红色光晕
+                    : 'shadow-[0_0_15px_rgba(34,197,94,0.5)] border border-green-500/30' // 未重置：绿色光晕
               }`}
               title={
-                config?.dailyResetUsed 
-                  ? "今日已重置过积分" 
-                  : "点击重置积分（今日可重置）"
+                isAutoResetEnabled
+                  ? "每日自动重置已启用"
+                  : config?.dailyResetUsed 
+                    ? "今日已重置过积分" 
+                    : "点击重置积分（今日可重置）"
               }
             >
               <div className="text-xs text-white/70">可用积分</div>
@@ -417,23 +437,45 @@ export function Dashboard() {
             </button>
           )}
 
-          {/* 监控状态开关 */}
-          <div className="flex items-center space-x-2">
-            <span className="text-sm text-white/80 hidden md:block">监控</span>
-            <button
-              onClick={toggleMonitoring}
-              disabled={!config?.cookie || !isConnected}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50 ${
-                isMonitoring ? 'bg-green-500' : 'bg-gray-600'
-              }`}
-              title={!isConnected ? "请等待连接建立" : !config?.cookie ? "请先配置Cookie" : "切换监控状态"}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
-                  isMonitoring ? 'translate-x-6' : 'translate-x-1'
+          {/* 开关组 - 竖向排列 */}
+          <div className="flex flex-col space-y-2">
+            {/* 监控状态开关 */}
+            <div className="flex items-center space-x-2">
+              <span className="text-xs text-white/80 hidden md:block">监控</span>
+              <button
+                onClick={toggleMonitoring}
+                disabled={!config?.cookie || !isConnected}
+                className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50 ${
+                  isMonitoring ? 'bg-green-500' : 'bg-gray-600'
                 }`}
-              />
-            </button>
+                title={!isConnected ? "请等待连接建立" : !config?.cookie ? "请先配置Cookie" : "切换监控状态"}
+              >
+                <span
+                  className={`inline-block h-3 w-3 transform rounded-full bg-white transition ${
+                    isMonitoring ? 'translate-x-4' : 'translate-x-0.5'
+                  }`}
+                />
+              </button>
+            </div>
+            
+            {/* 自动重置开关 */}
+            <div className="flex items-center space-x-2">
+              <span className="text-xs text-white/80 hidden md:block">重置</span>
+              <button
+                onClick={toggleAutoReset}
+                disabled={!config?.cookie || !isConnected}
+                className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50 ${
+                  isAutoResetEnabled ? 'bg-purple-500' : 'bg-gray-600'
+                }`}
+                title={!isConnected ? "请等待连接建立" : !config?.cookie ? "请先配置Cookie" : "切换自动重置状态"}
+              >
+                <span
+                  className={`inline-block h-3 w-3 transform rounded-full bg-white transition ${
+                    isAutoResetEnabled ? 'translate-x-4' : 'translate-x-0.5'
+                  }`}
+                />
+              </button>
+            </div>
           </div>
 
           {/* 图标按钮组 - 竖向排列 */}
