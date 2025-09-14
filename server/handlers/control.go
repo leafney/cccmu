@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"log"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/leafney/cccmu/server/client"
@@ -104,7 +105,9 @@ func (h *ControlHandler) ResetCredits(c *fiber.Ctx) error {
 	h.scheduler.NotifyResetStatusChange(true)
 
 	// 触发数据刷新，获取最新的积分余额
+	// 延迟2秒后查询，确保服务端处理完重置操作
 	go func() {
+		time.Sleep(2 * time.Second)
 		if err := h.scheduler.FetchBalanceManually(); err != nil {
 			log.Printf("重置后刷新积分余额失败: %v", err)
 		}

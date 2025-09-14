@@ -363,6 +363,7 @@ func (s *SchedulerService) FetchBalanceManually() error {
 	return s.fetchAndSaveBalance()
 }
 
+
 // FetchAllDataManually 手动获取所有数据（使用数据 + 积分余额）
 func (s *SchedulerService) FetchAllDataManually() error {
 	// 更新配置（只需要更新一次）
