@@ -450,8 +450,7 @@ export function Dashboard() {
                     : "点击重置积分（今日可重置）"
               }
             >
-              <div className="text-xs text-white/70">可用积分</div>
-              <div className="text-sm font-mono font-bold text-yellow-400">
+              <div className="text-lg font-mono font-bold text-yellow-400 min-w-[4ch] text-center">
                 {creditBalance.remaining.toLocaleString()}
               </div>
             </button>
