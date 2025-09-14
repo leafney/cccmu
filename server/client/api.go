@@ -18,7 +18,7 @@ type ClaudeAPIClient struct {
 	client               *resty.Client
 	cookie               string
 	cookieUpdateCallback CookieUpdateCallback
-	cache                *APICache  // API缓存管理器
+	cache                *APICache // API缓存管理器
 }
 
 // NewClaudeAPIClient 创建新的Claude API客户端
@@ -125,10 +125,10 @@ func (c *ClaudeAPIClient) FetchUsageData() ([]models.UsageData, error) {
 
 	result := c.convertToUsageData(apiResp)
 	utils.Logf("API请求成功: FetchUsageData - 获取到 %d 条数据记录", len(result))
-	
+
 	// 缓存成功结果
 	c.cache.SetCachedUsageData(result, nil)
-	
+
 	return result, nil
 }
 
@@ -200,7 +200,7 @@ func (c *ClaudeAPIClient) FetchCreditBalance() (*models.CreditBalance, error) {
 		UpdatedAt: time.Now(),
 	}
 	utils.Logf("API请求成功: FetchCreditBalance - 获取到余额 %d", creditsResp.Credits)
-	
+
 	// 缓存成功结果
 	c.cache.SetCachedBalance(result, nil)
 
@@ -237,7 +237,6 @@ func (c *ClaudeAPIClient) convertToUsageData(apiData []ClaudeUsageData) []models
 	return usageData
 }
 
-
 // ClaudeResetCreditsResponse Claude重置积分API响应
 type ClaudeResetCreditsResponse struct {
 	Success        bool   `json:"success"`
@@ -261,8 +260,7 @@ func (c *ClaudeAPIClient) ResetCredits() (bool, string, error) {
 		SetHeader("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36").
 		SetHeader("Accept", "application/json, text/plain, */*").
 		SetHeader("Content-Type", "application/json").
-		// SetDebug(true).
-		Post("https://www.aicodemirror.com/api/user/credits/reset")
+		Post("https://www.aicodemirror.com/api/user/credit-reset")
 
 	if err != nil {
 		return false, "", fmt.Errorf("HTTP请求失败: %w", err)
@@ -282,7 +280,7 @@ func (c *ClaudeAPIClient) ResetCredits() (bool, string, error) {
 		resetInfo := fmt.Sprintf("重置成功，API响应: %s", string(resp.Body()))
 		return true, resetInfo, nil
 
-	case 404:
+	case 400:
 		// 今日已重置过，也视为成功状态
 		resetInfo := "今日已重置过积分，重置状态有效"
 		return true, resetInfo, nil
