@@ -371,6 +371,10 @@ func (s *SchedulerService) resetDailyFlags() error {
 	}
 
 	log.Println("每日重置标记已重置为false")
+	
+	// 通过SSE推送重置状态变化到前端
+	s.notifyResetStatusListeners(false)
+	
 	return nil
 }
 
