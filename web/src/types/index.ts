@@ -6,6 +6,14 @@ export interface IUsageData {
   model: string;
 }
 
+// 自动调度配置
+export interface IAutoScheduleConfig {
+  enabled: boolean;           // 是否启用自动调度
+  startTime: string;          // 开启时间 "HH:MM"
+  endTime: string;            // 关闭时间 "HH:MM"
+  monitoringOn: boolean;      // 时间范围内是开启还是关闭监控
+}
+
 // 用户配置（API响应）
 export interface IUserConfig {
   cookie: boolean;                  // Cookie配置状态
@@ -13,6 +21,7 @@ export interface IUserConfig {
   timeRange: number;                // 分钟
   enabled: boolean;
   dailyResetUsed: boolean;          // 当日重置是否已使用
+  autoSchedule: IAutoScheduleConfig; // 自动调度配置
 }
 
 // 用户配置（API请求）
@@ -21,6 +30,7 @@ export interface IUserConfigRequest {
   interval: number;                 // 秒
   timeRange: number;                // 分钟
   enabled: boolean;
+  autoSchedule?: IAutoScheduleConfig; // 自动调度配置（可选）
 }
 
 // API响应格式
@@ -55,4 +65,13 @@ export interface IChartDataPoint {
 export interface ICreditBalance {
   remaining: number;
   updatedAt: string;
+}
+
+// 监控状态信息（SSE推送）
+export interface IMonitoringStatus {
+  type: 'monitoring_status';
+  isMonitoring: boolean;          // 当前监控是否运行
+  autoScheduleEnabled: boolean;   // 自动调度是否启用
+  autoScheduleActive: boolean;    // 当前是否在自动调度时间范围内
+  timestamp: string;
 }

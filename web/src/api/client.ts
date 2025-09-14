@@ -1,4 +1,4 @@
-import type { IUserConfig, IUserConfigRequest, IAPIResponse, IUsageData, ICreditBalance } from '../types';
+import type { IUserConfig, IUserConfigRequest, IAPIResponse, IUsageData, ICreditBalance, IMonitoringStatus } from '../types';
 
 const API_BASE = '/api';
 const DEFAULT_TIMEOUT = 30000; // 30秒超时
@@ -102,6 +102,7 @@ class APIClient {
     onError?: (error: Event) => void, 
     onOpen?: () => void,
     onResetStatusUpdate?: (resetUsed: boolean) => void,
+    onMonitoringStatusUpdate?: (status: IMonitoringStatus) => void,
     timeRange: number = 60
   ): EventSource {
     const eventSource = new EventSource(`${API_BASE}/usage/stream?minutes=${timeRange}`);
@@ -157,6 +158,18 @@ class APIClient {
         }
       } catch (error) {
         console.error('解析重置状态数据失败:', error, event.data);
+      }
+    });
+
+    eventSource.addEventListener('monitoring_status', (event) => {
+      try {
+        const statusData = JSON.parse(event.data);
+        console.debug('收到监控状态更新:', statusData);
+        if (onMonitoringStatusUpdate) {
+          onMonitoringStatusUpdate(statusData);
+        }
+      } catch (error) {
+        console.error('解析监控状态数据失败:', error, event.data);
       }
     });
 

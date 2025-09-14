@@ -60,11 +60,31 @@ func (h *ConfigHandler) UpdateConfig(c *fiber.Ctx) error {
 		LastCookieValidTime:     currentConfig.LastCookieValidTime,
 		CookieValidationInterval: currentConfig.CookieValidationInterval,
 		DailyResetUsed:          currentConfig.DailyResetUsed,
+		AutoSchedule:            currentConfig.AutoSchedule, // 默认保持原有自动调度配置
 	}
 
 	// 如果请求中包含新的Cookie，则更新（使用指针判断是否设置了Cookie字段）
 	if requestConfig.Cookie != nil {
 		newConfig.Cookie = *requestConfig.Cookie
+	}
+
+	// 如果请求中包含自动调度配置，则更新
+	if requestConfig.AutoSchedule != nil {
+		oldAutoSchedule := currentConfig.AutoSchedule
+		newConfig.AutoSchedule = *requestConfig.AutoSchedule
+		
+		log.Printf("[配置更新] 自动调度配置变更:")
+		log.Printf("[配置更新] - 启用状态: %v -> %v", oldAutoSchedule.Enabled, newConfig.AutoSchedule.Enabled)
+		if newConfig.AutoSchedule.Enabled {
+			log.Printf("[配置更新] - 时间范围: %s-%s", newConfig.AutoSchedule.StartTime, newConfig.AutoSchedule.EndTime)
+			log.Printf("[配置更新] - 范围内监控: %v", newConfig.AutoSchedule.MonitoringOn)
+		}
+		
+		// 如果启用了自动调度，强制开启主监控开关
+		if newConfig.AutoSchedule.Enabled {
+			newConfig.Enabled = true
+			log.Printf("[配置更新] 启用自动调度，强制开启监控开关")
+		}
 	}
 
 	// 验证配置
@@ -78,11 +98,19 @@ func (h *ConfigHandler) UpdateConfig(c *fiber.Ctx) error {
 		return c.Status(500).JSON(models.Error(500, "更新配置失败", err))
 	}
 
-	log.Printf("配置已更新: 间隔=%d秒, 时间范围=%d分钟, 启用=%v", 
-		newConfig.Interval, newConfig.TimeRange, newConfig.Enabled)
+	log.Printf("[配置更新] 配置已更新完成:")
+	log.Printf("[配置更新] - 间隔: %d秒", newConfig.Interval)
+	log.Printf("[配置更新] - 时间范围: %d分钟", newConfig.TimeRange)
+	log.Printf("[配置更新] - 监控启用: %v", newConfig.Enabled)
+	log.Printf("[配置更新] - 自动调度: %v", newConfig.AutoSchedule.Enabled)
 
 	// 通过SSE通知前端配置已更新
+	log.Printf("[配置更新] 通知前端配置变更...")
 	h.scheduler.NotifyConfigChange()
+	
+	// 通知自动调度状态变化
+	log.Printf("[配置更新] 通知前端自动调度状态变更...")
+	h.scheduler.NotifyAutoScheduleChange()
 
 	return c.JSON(models.SuccessMessage("配置更新成功"))
 }

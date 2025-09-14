@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { UsageChart } from '../components/UsageChart';
 import { SettingsModal } from '../components/SettingsModal';
-import type { IUsageData, IUserConfig, IUserConfigRequest, ICreditBalance } from '../types';
+import type { IUsageData, IUserConfig, IUserConfigRequest, ICreditBalance, IMonitoringStatus } from '../types';
 import { apiClient } from '../api/client';
 import { Settings, Wifi, WifiOff, RefreshCw, BarChart3, X } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -18,6 +18,7 @@ export function Dashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [isAutoResetEnabled, setIsAutoResetEnabled] = useState(false);
+  const [monitoringStatus, setMonitoringStatus] = useState<IMonitoringStatus | null>(null);
   const retryTimeoutRef = useRef<number | null>(null);
 
   // 建立SSE连接
@@ -106,6 +107,12 @@ export function Dashboard() {
         console.debug('收到重置状态更新:', resetUsed);
         setConfig(prev => prev ? { ...prev, dailyResetUsed: resetUsed } : prev);
       },
+      (status: IMonitoringStatus) => {
+        // 处理监控状态更新
+        console.debug('收到监控状态更新:', status);
+        setMonitoringStatus(status);
+        setIsMonitoring(status.isMonitoring);
+      },
       timeRange
     );
 
@@ -120,7 +127,15 @@ export function Dashboard() {
         // 加载配置
         const configResponse = await apiClient.getConfig();
         if (configResponse.data) {
-          setConfig(configResponse.data);
+          const loadedConfig = configResponse.data;
+          
+          // 应用互控逻辑：如果自动调度已启用，确保监控开关也启用
+          const adjustedConfig = {
+            ...loadedConfig,
+            enabled: loadedConfig.autoSchedule.enabled ? true : loadedConfig.enabled
+          };
+          
+          setConfig(adjustedConfig);
         }
 
         // 加载任务运行状态
@@ -186,6 +201,11 @@ export function Dashboard() {
 
 
   const toggleMonitoring = async () => {
+    // 如果启用了自动调度，禁止手动操作
+    if (monitoringStatus?.autoScheduleEnabled) {
+      toast.error('自动调度已启用，请在设置中关闭自动调度后再手动操作');
+      return;
+    }
     try {
       if (isMonitoring) {
         // 先立即更新UI状态为关闭，提供即时反馈
@@ -444,11 +464,23 @@ export function Dashboard() {
               <span className="text-xs text-white/80 hidden md:block">监控</span>
               <button
                 onClick={toggleMonitoring}
-                disabled={!config?.cookie || !isConnected}
-                className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50 ${
+                disabled={!config?.cookie || !isConnected || monitoringStatus?.autoScheduleEnabled}
+                className={`relative inline-flex h-4 w-8 items-center rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50 ${
                   isMonitoring ? 'bg-green-500' : 'bg-gray-600'
+                } ${
+                  monitoringStatus?.autoScheduleEnabled 
+                    ? 'ring-2 ring-orange-400/75 shadow-lg shadow-orange-400/25 animate-pulse' 
+                    : ''
                 }`}
-                title={!isConnected ? "请等待连接建立" : !config?.cookie ? "请先配置Cookie" : "切换监控状态"}
+                title={
+                  monitoringStatus?.autoScheduleEnabled 
+                    ? "自动调度已启用，无法手动操作" 
+                    : !isConnected 
+                    ? "请等待连接建立" 
+                    : !config?.cookie 
+                    ? "请先配置Cookie" 
+                    : "切换监控状态"
+                }
               >
                 <span
                   className={`inline-block h-3 w-3 transform rounded-full bg-white transition ${
@@ -528,6 +560,8 @@ export function Dashboard() {
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
         onConfigUpdate={handleConfigUpdate}
+        isMonitoring={isMonitoring}
+        monitoringStatus={monitoringStatus}
       />
 
       {/* 重置积分确认弹窗 */}

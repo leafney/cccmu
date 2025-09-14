@@ -88,16 +88,32 @@ func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
 			}
 		}
 
+		// 立即发送当前监控状态和自动调度状态
+		statusData := map[string]any{
+			"type":                 "monitoring_status",
+			"isMonitoring":         h.scheduler.IsRunning(),
+			"autoScheduleEnabled":  h.scheduler.IsAutoScheduleEnabled(),
+			"autoScheduleActive":   h.scheduler.IsInAutoScheduleTimeRange(),
+			"timestamp":           time.Now().Format(time.RFC3339),
+		}
+		jsonData, err := json.Marshal(statusData)
+		if err == nil {
+			fmt.Fprintf(w, "event: monitoring_status\ndata: %s\n\n", jsonData)
+			w.Flush()
+		}
+
 		// 添加数据监听器
 		listener := h.scheduler.AddDataListener()
 		balanceListener := h.scheduler.AddBalanceListener()
 		errorListener := h.scheduler.AddErrorListener()
 		resetStatusListener := h.scheduler.AddResetStatusListener()
+		autoScheduleListener := h.scheduler.AddAutoScheduleListener()
 		defer func() {
 			h.scheduler.RemoveDataListener(listener)
 			h.scheduler.RemoveBalanceListener(balanceListener)
 			h.scheduler.RemoveErrorListener(errorListener)
 			h.scheduler.RemoveResetStatusListener(resetStatusListener)
+			h.scheduler.RemoveAutoScheduleListener(autoScheduleListener)
 		}()
 
 		// 设置连接保活
@@ -177,6 +193,24 @@ func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
 					continue
 				}
 				fmt.Fprintf(w, "event: reset_status\ndata: %s\n\n", jsonData)
+				if err := w.Flush(); err != nil {
+					return
+				}
+
+			case <-autoScheduleListener:
+				// 自动调度状态变化，发送完整的监控状态
+				statusData := map[string]any{
+					"type":                 "monitoring_status",
+					"isMonitoring":         h.scheduler.IsRunning(),
+					"autoScheduleEnabled":  h.scheduler.IsAutoScheduleEnabled(),
+					"autoScheduleActive":   h.scheduler.IsInAutoScheduleTimeRange(),
+					"timestamp":           time.Now().Format(time.RFC3339),
+				}
+				jsonData, err := json.Marshal(statusData)
+				if err != nil {
+					continue
+				}
+				fmt.Fprintf(w, "event: monitoring_status\ndata: %s\n\n", jsonData)
 				if err := w.Flush(); err != nil {
 					return
 				}
