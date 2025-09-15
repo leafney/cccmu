@@ -14,14 +14,16 @@ type ConfigHandler struct {
 	db              *database.BadgerDB
 	scheduler       *services.SchedulerService
 	autoResetService *services.AutoResetService
+	asyncUpdater    *services.AsyncConfigUpdater
 }
 
 // NewConfigHandler 创建配置处理器
-func NewConfigHandler(db *database.BadgerDB, scheduler *services.SchedulerService, autoResetService *services.AutoResetService) *ConfigHandler {
+func NewConfigHandler(db *database.BadgerDB, scheduler *services.SchedulerService, autoResetService *services.AutoResetService, asyncUpdater *services.AsyncConfigUpdater) *ConfigHandler {
 	return &ConfigHandler{
 		db:              db,
 		scheduler:       scheduler,
 		autoResetService: autoResetService,
+		asyncUpdater:    asyncUpdater,
 	}
 }
 
@@ -106,17 +108,69 @@ func (h *ConfigHandler) UpdateConfig(c *fiber.Ctx) error {
 		return c.Status(400).JSON(models.Error(400, "配置验证失败", err))
 	}
 
-	// 更新调度器配置
-	if err := h.scheduler.UpdateConfig(newConfig); err != nil {
-		log.Printf("更新调度器配置失败: %v", err)
-		return c.Status(500).JSON(models.Error(500, "更新配置失败", err))
+	// 先同步保存配置到数据库（快速操作）
+	if err := h.scheduler.UpdateConfigSync(newConfig); err != nil {
+		log.Printf("同步保存配置失败: %v", err)
+		return c.Status(500).JSON(models.Error(500, "保存配置失败", err))
 	}
 
-	// 更新自动重置服务配置
-	if h.autoResetService != nil {
-		if err := h.autoResetService.UpdateConfig(&newConfig.AutoReset); err != nil {
-			log.Printf("更新自动重置服务配置失败: %v", err)
-			return c.Status(500).JSON(models.Error(500, "更新自动重置配置失败", err))
+	// 异步提交重型操作任务
+	if h.asyncUpdater != nil && h.asyncUpdater.IsRunning() {
+		// 提交调度器更新任务
+		if h.scheduler.NeedsTaskRestart(currentConfig, newConfig) {
+			jobID, err := h.asyncUpdater.SubmitJob(services.JobTypeScheduler, currentConfig, newConfig)
+			if err != nil {
+				log.Printf("提交调度器异步更新任务失败: %v", err)
+				// 降级到同步模式
+				if err := h.scheduler.UpdateConfig(newConfig); err != nil {
+					log.Printf("降级同步更新调度器配置失败: %v", err)
+					return c.Status(500).JSON(models.Error(500, "更新配置失败", err))
+				}
+			} else {
+				log.Printf("调度器异步更新任务已提交: %s", jobID)
+			}
+		}
+
+		// 提交自动调度配置更新任务
+		if requestConfig.AutoSchedule != nil {
+			jobID, err := h.asyncUpdater.SubmitJob(services.JobTypeAutoSchedule, &currentConfig.AutoSchedule, &newConfig.AutoSchedule)
+			if err != nil {
+				log.Printf("提交自动调度异步更新任务失败: %v", err)
+			} else {
+				log.Printf("自动调度异步更新任务已提交: %s", jobID)
+			}
+		}
+
+		// 提交自动重置配置更新任务
+		if requestConfig.AutoReset != nil && h.autoResetService != nil {
+			jobID, err := h.asyncUpdater.SubmitJob(services.JobTypeAutoReset, &currentConfig.AutoReset, &newConfig.AutoReset)
+			if err != nil {
+				log.Printf("提交自动重置异步更新任务失败: %v", err)
+				// 降级到同步模式
+				if err := h.autoResetService.UpdateConfig(&newConfig.AutoReset); err != nil {
+					log.Printf("降级同步更新自动重置配置失败: %v", err)
+					return c.Status(500).JSON(models.Error(500, "更新自动重置配置失败", err))
+				}
+			} else {
+				log.Printf("自动重置异步更新任务已提交: %s", jobID)
+			}
+		}
+	} else {
+		// 异步服务不可用，降级到同步模式
+		log.Printf("异步配置更新服务不可用，降级到同步模式")
+		
+		// 更新调度器配置
+		if err := h.scheduler.UpdateConfig(newConfig); err != nil {
+			log.Printf("更新调度器配置失败: %v", err)
+			return c.Status(500).JSON(models.Error(500, "更新配置失败", err))
+		}
+
+		// 更新自动重置服务配置
+		if h.autoResetService != nil {
+			if err := h.autoResetService.UpdateConfig(&newConfig.AutoReset); err != nil {
+				log.Printf("更新自动重置服务配置失败: %v", err)
+				return c.Status(500).JSON(models.Error(500, "更新自动重置配置失败", err))
+			}
 		}
 	}
 

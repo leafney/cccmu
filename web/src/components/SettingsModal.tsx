@@ -9,6 +9,7 @@ interface SettingsModalProps {
   onConfigUpdate?: (config: IUserConfig) => void;
   isMonitoring?: boolean;
   monitoringStatus?: IMonitoringStatus | null;
+  onMonitoringChange?: (isMonitoring: boolean) => void;
 }
 
 // 标签页定义
@@ -27,7 +28,7 @@ const TABS: TabItem[] = [
   { id: 'reset', label: '自动重置', icon: RotateCcw },
 ];
 
-export function SettingsModal({ isOpen, onClose, onConfigUpdate, isMonitoring = false }: SettingsModalProps) {
+export function SettingsModal({ isOpen, onClose, onConfigUpdate, isMonitoring = false, monitoringStatus, onMonitoringChange }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>('status');
   const [config, setConfig] = useState<IUserConfig>({
     cookie: false,
@@ -60,6 +61,19 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate, isMonitoring = 
       loadConfig();
     }
   }, [isOpen]);
+
+  // 同步isMonitoring状态到本地配置
+  useEffect(() => {
+    if (isOpen && config) {
+      // 确保config.enabled与实际的isMonitoring状态一致
+      if (config.enabled !== isMonitoring) {
+        setConfig(prev => ({
+          ...prev,
+          enabled: isMonitoring
+        }));
+      }
+    }
+  }, [isOpen, isMonitoring, config?.enabled]);
 
   const loadConfig = async () => {
     try {
@@ -202,6 +216,44 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate, isMonitoring = 
     }
   };
 
+  // 监控总开关切换函数
+  const toggleMonitoring = async () => {
+    try {
+      const newMonitoringState = !isMonitoring;
+      
+      if (newMonitoringState) {
+        // 启动监控
+        await apiClient.startTask();
+        showMessage('success', '已开启动态监控');
+      } else {
+        // 停止监控
+        await apiClient.stopTask();
+        showMessage('success', '已关闭动态监控');
+      }
+      
+      // 更新本地配置状态
+      const updatedConfig = { ...config, enabled: newMonitoringState };
+      setConfig(updatedConfig);
+      
+      // 同步更新到后端配置
+      const requestConfig: IUserConfigRequest = {
+        interval: config.interval,
+        timeRange: config.timeRange,
+        enabled: newMonitoringState
+      };
+      await apiClient.updateConfig(requestConfig);
+      
+      // 通知父组件监控状态变化
+      onMonitoringChange?.(newMonitoringState);
+      
+      // 通知父组件配置更新
+      onConfigUpdate?.(updatedConfig);
+    } catch (error) {
+      console.error('切换监控状态失败:', error);
+      showMessage('error', '操作失败，请稍后重试');
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -282,8 +334,10 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate, isMonitoring = 
                 <AutoScheduleTab 
                   config={config}
                   isMonitoring={isMonitoring}
+                  monitoringStatus={monitoringStatus}
                   updateConfig={updateConfig}
                   handleSaveScheduleConfig={handleSaveScheduleConfig}
+                  toggleMonitoring={toggleMonitoring}
                   saving={saving}
                 />
               )}
@@ -446,19 +500,93 @@ function BasicConfigTab({
 // 自动调度标签页组件
 function AutoScheduleTab({ 
   config, 
-  isMonitoring, 
+  isMonitoring,
+  monitoringStatus,
   updateConfig, 
   handleSaveScheduleConfig, 
+  toggleMonitoring,
   saving 
 }: {
   config: IUserConfig;
   isMonitoring: boolean;
+  monitoringStatus?: IMonitoringStatus | null;
   updateConfig: (field: keyof IUserConfig, value: any) => void;
   handleSaveScheduleConfig: () => void;
+  toggleMonitoring: () => void;
   saving: boolean;
 }) {
   return (
     <div className="space-y-6">
+      {/* 监控总开关 */}
+      <div>
+        <div className="flex items-center mb-4">
+          <Cog className="w-5 h-5 mr-2 text-gray-600" />
+          <h3 className="text-sm font-semibold text-gray-900">监控总开关</h3>
+          <div className="relative group">
+            <HelpCircle className="w-4 h-4 ml-2 text-gray-400 cursor-help" />
+            <div className="absolute left-full top-1/2 transform -translate-y-1/2 ml-2 w-64 p-2 bg-gray-800 text-white text-xs rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[9999]">
+              等同于首页的监控开关，为方便操作在此页面也提供了同样的开关。控制整个动态监控功能的启用和关闭。
+            </div>
+          </div>
+        </div>
+        
+        {/* 监控开关 */}
+        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+          <div>
+            <span className="text-sm font-medium text-gray-700">动态监控开关</span>
+            <p className="text-xs text-gray-500 mt-1">
+              {monitoringStatus?.autoScheduleEnabled 
+                ? '自动调度已启用，监控开关由系统自动控制' 
+                : isMonitoring 
+                ? '监控已启用，正在实时收集使用数据' 
+                : '监控已关闭，请启用后开始数据收集'
+              }
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={toggleMonitoring}
+            disabled={!config.cookie || monitoringStatus?.autoScheduleEnabled}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed ${
+              isMonitoring ? 'bg-blue-600' : 'bg-gray-300'
+            } ${
+              monitoringStatus?.autoScheduleEnabled 
+                ? 'ring-2 ring-orange-400/75 shadow-lg shadow-orange-400/25 animate-pulse' 
+                : ''
+            }`}
+            title={
+              monitoringStatus?.autoScheduleEnabled 
+                ? "自动调度已启用，无法手动操作" 
+                : !config.cookie 
+                ? "请先配置Cookie" 
+                : "切换监控状态"
+            }
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ${
+                isMonitoring ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+        
+        {!config.cookie && !monitoringStatus?.autoScheduleEnabled && (
+          <div className="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
+            <p className="text-sm text-amber-800">
+              💡 请先在基础配置标签页中配置Cookie后再启用监控。
+            </p>
+          </div>
+        )}
+
+        {monitoringStatus?.autoScheduleEnabled && (
+          <div className="mt-3 p-3 bg-orange-50 rounded-lg border border-orange-200">
+            <p className="text-sm text-orange-800">
+              🤖 自动调度已启用，监控开关现在由系统根据调度时间自动控制。如需手动操作，请先关闭自动调度功能。
+            </p>
+          </div>
+        )}
+      </div>
+
       {/* 自动调度配置 */}
       <div>
         <div className="flex items-center mb-4">

@@ -591,6 +591,7 @@ export function Dashboard() {
         onConfigUpdate={handleConfigUpdate}
         isMonitoring={isMonitoring}
         monitoringStatus={monitoringStatus}
+        onMonitoringChange={setIsMonitoring}
       />
 
       {/* 重置积分确认弹窗 */}
