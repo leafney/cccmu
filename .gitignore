@@ -49,3 +49,6 @@ logs/
 *.tmp
 temp/
 bin/
+.auth
+cookies.txt
+.playwright-mcp/

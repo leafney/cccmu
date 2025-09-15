@@ -1,12 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { UsageChart } from '../components/UsageChart';
 import { SettingsModal } from '../components/SettingsModal';
+import { LoginPage } from '../components/LoginPage';
 import type { IUsageData, IUserConfig, IUserConfigRequest, ICreditBalance, IMonitoringStatus } from '../types';
 import { apiClient } from '../api/client';
-import { Settings, Wifi, WifiOff, RefreshCw, BarChart3, X } from 'lucide-react';
+import { Settings, Wifi, WifiOff, RefreshCw, BarChart3, X, LogOut } from 'lucide-react';
+import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
 
 export function Dashboard() {
+  const { isAuthenticated, isLoading, logout } = useAuth();
   const [usageData, setUsageData] = useState<IUsageData[]>([]);
   const [config, setConfig] = useState<IUserConfig | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -20,6 +23,13 @@ export function Dashboard() {
   const [isAutoResetEnabled, setIsAutoResetEnabled] = useState(false);
   const [monitoringStatus, setMonitoringStatus] = useState<IMonitoringStatus | null>(null);
   const retryTimeoutRef = useRef<number | null>(null);
+
+  // 处理认证过期
+  const handleAuthExpired = useCallback(() => {
+    console.warn('认证已过期，即将跳转到登录页');
+    toast.error('登录已过期，请重新登录');
+    logout();
+  }, [logout]);
 
   // 建立SSE连接
   const connectSSE = useCallback(() => {
@@ -113,15 +123,17 @@ export function Dashboard() {
         setMonitoringStatus(status);
         setIsMonitoring(status.isMonitoring);
       },
+      handleAuthExpired, // 认证过期处理
       timeRange
     );
 
     setEventSource(newEventSource);
-  }, [config?.timeRange]);
+  }, [config?.timeRange, handleAuthExpired]);
 
 
-  // 加载初始配置和任务状态
+  // 加载初始配置和任务状态（仅在已认证时执行）
   useEffect(() => {
+    if (!isAuthenticated) return;
     const loadConfigAndStatus = async () => {
       try {
         // 加载配置
@@ -156,11 +168,11 @@ export function Dashboard() {
     };
 
     loadConfigAndStatus();
-  }, []);
+  }, [isAuthenticated]);
 
   // 配置更新后重新连接SSE - 只在timeRange变化时重连
   useEffect(() => {
-    if (config) {
+    if (config && isAuthenticated) {
       connectSSE();
     }
 
@@ -176,7 +188,7 @@ export function Dashboard() {
         setIsConnected(false);
       }
     };
-  }, [config?.timeRange, connectSSE]); // 只在timeRange变化时重连
+  }, [config?.timeRange, connectSSE, isAuthenticated]); // 只在timeRange变化时重连
 
   // 处理配置更新
   const handleConfigUpdate = async (newConfig: IUserConfig) => {
@@ -426,6 +438,23 @@ export function Dashboard() {
     }
   };
 
+  // 显示加载状态
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">正在加载...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 未认证时显示登录页面
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900">
       {/* 顶部控制栏 */}
@@ -558,6 +587,15 @@ export function Dashboard() {
               title="打开设置"
             >
               <Settings className="w-3.5 h-3.5" />
+            </button>
+
+            {/* 登出按钮 */}
+            <button
+              onClick={logout}
+              className="p-1 text-white/80 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors"
+              title="退出登录"
+            >
+              <LogOut className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>

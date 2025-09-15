@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/leafney/cccmu/server/auth"
 	"github.com/leafney/cccmu/server/database"
 	"github.com/leafney/cccmu/server/models"
 	"github.com/leafney/cccmu/server/services"
@@ -14,20 +15,28 @@ import (
 
 // SSEHandler SSE处理器
 type SSEHandler struct {
-	db        *database.BadgerDB
-	scheduler *services.SchedulerService
+	db          *database.BadgerDB
+	scheduler   *services.SchedulerService
+	authManager *auth.Manager
 }
 
 // NewSSEHandler 创建SSE处理器
-func NewSSEHandler(db *database.BadgerDB, scheduler *services.SchedulerService) *SSEHandler {
+func NewSSEHandler(db *database.BadgerDB, scheduler *services.SchedulerService, authManager *auth.Manager) *SSEHandler {
 	return &SSEHandler{
-		db:        db,
-		scheduler: scheduler,
+		db:          db,
+		scheduler:   scheduler,
+		authManager: authManager,
 	}
 }
 
 // StreamUsageData SSE数据流端点
 func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
+	// 验证认证状态（由于已经通过中间件，这里再次检查以确保安全）
+	sessionID := c.Cookies("cccmu_session")
+	if _, valid := h.authManager.ValidateSession(sessionID); !valid {
+		return c.Status(401).JSON(models.Error(401, "认证无效", nil))
+	}
+
 	// 设置SSE响应头
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
@@ -216,6 +225,22 @@ func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
 				}
 
 			case <-ticker.C:
+				// 检查认证状态
+				if _, valid := h.authManager.ValidateSession(sessionID); !valid {
+					// 发送认证过期事件
+					authExpired := map[string]any{
+						"type":      "auth_expired",
+						"message":   "登录已过期",
+						"timestamp": time.Now().Format(time.RFC3339),
+					}
+					jsonData, err := json.Marshal(authExpired)
+					if err == nil {
+						fmt.Fprintf(w, "event: auth_expired\ndata: %s\n\n", jsonData)
+						w.Flush()
+					}
+					return // 关闭连接
+				}
+
 				// 发送心跳保活
 				heartbeat := map[string]any{
 					"type":      "heartbeat",
