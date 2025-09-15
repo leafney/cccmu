@@ -27,6 +27,12 @@ export function SettingsPanel({ className = '', onConfigUpdate }: SettingsPanelP
       resetTime: '',
       thresholdEnabled: false,
       threshold: 0
+    },
+    version: {
+      version: 'Loading...',
+      gitCommit: 'Loading...',
+      buildTime: '',
+      goVersion: ''
     }
   });
   const [cookieInput, setCookieInput] = useState<string>('');

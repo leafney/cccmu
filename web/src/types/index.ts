@@ -23,6 +23,14 @@ export interface IAutoResetConfig {
   threshold: number;         // 积分阈值（预留）
 }
 
+// 版本信息
+export interface IVersionInfo {
+  version: string;   // 版本号
+  gitCommit: string; // Git提交短哈希
+  buildTime: string; // 构建时间
+  goVersion: string; // Go版本
+}
+
 // 用户配置（API响应）
 export interface IUserConfig {
   cookie: boolean;                  // Cookie配置状态
@@ -32,6 +40,7 @@ export interface IUserConfig {
   dailyResetUsed: boolean;          // 当日重置是否已使用
   autoSchedule: IAutoScheduleConfig; // 自动调度配置
   autoReset: IAutoResetConfig;       // 自动重置配置
+  version: IVersionInfo;            // 版本信息
 }
 
 // 用户配置（API请求）

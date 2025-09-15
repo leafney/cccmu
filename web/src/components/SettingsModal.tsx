@@ -48,6 +48,12 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate, isMonitoring = 
       resetTime: '',
       thresholdEnabled: false,
       threshold: 0
+    },
+    version: {
+      version: 'Loading...',
+      gitCommit: 'Loading...',
+      buildTime: '',
+      goVersion: ''
     }
   });
   const [cookieInput, setCookieInput] = useState<string>('');
@@ -1016,6 +1022,26 @@ function StatusInfoTab({
               <span className="text-sm text-purple-900">{config.autoReset.resetTime}</span>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* 版本信息 */}
+      <div className="pt-4 border-t border-gray-200">
+        <div className="flex items-center mb-4">
+          <Info className="w-5 h-5 mr-2 text-gray-600" />
+          <h3 className="text-sm font-semibold text-gray-900">版本信息</h3>
+        </div>
+        
+        <div className="space-y-3">
+          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+            <span className="text-sm text-gray-700">版本号</span>
+            <span className="text-sm text-gray-900 font-mono">{config.version?.version || 'Unknown'}</span>
+          </div>
+          
+          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+            <span className="text-sm text-gray-700">Git提交</span>
+            <span className="text-sm text-gray-900 font-mono">{config.version?.gitCommit || 'Unknown'}</span>
+          </div>
         </div>
       </div>
 

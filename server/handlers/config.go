@@ -2,11 +2,19 @@ package handlers
 
 import (
 	"log"
+	"runtime"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/leafney/cccmu/server/database"
 	"github.com/leafney/cccmu/server/models"
 	"github.com/leafney/cccmu/server/services"
+)
+
+// 版本信息变量，通过编译时注入
+var (
+	Version   = "dev"
+	GitCommit = "unknown"
+	BuildTime = "unknown"
 )
 
 // ConfigHandler 配置处理器
@@ -37,6 +45,14 @@ func (h *ConfigHandler) GetConfig(c *fiber.Ctx) error {
 
 	// 转换为API响应格式，Cookie字段自动转为布尔值
 	responseConfig := config.ToResponse()
+	
+	// 添加版本信息
+	responseConfig.Version = models.VersionInfo{
+		Version:   Version,
+		GitCommit: GitCommit,
+		BuildTime: BuildTime,
+		GoVersion: runtime.Version(),
+	}
 	
 	return c.JSON(models.Success(responseConfig))
 }

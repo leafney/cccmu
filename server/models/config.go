@@ -114,6 +114,14 @@ type UserConfig struct {
 	AutoReset               AutoResetConfig    `json:"autoReset"`               // 自动重置配置
 }
 
+// VersionInfo 版本信息结构
+type VersionInfo struct {
+	Version   string `json:"version"`   // 版本号
+	GitCommit string `json:"gitCommit"` // Git提交短哈希
+	BuildTime string `json:"buildTime"` // 构建时间
+	GoVersion string `json:"goVersion"` // Go版本
+}
+
 // UserConfigResponse API响应用的用户配置结构
 type UserConfigResponse struct {
 	Cookie                  bool               `json:"cookie"`                  // Cookie配置状态
@@ -125,6 +133,7 @@ type UserConfigResponse struct {
 	DailyResetUsed          bool               `json:"dailyResetUsed"`          // 当日重置是否已使用
 	AutoSchedule            AutoScheduleConfig `json:"autoSchedule"`            // 自动调度配置
 	AutoReset               AutoResetConfig    `json:"autoReset"`               // 自动重置配置
+	Version                 VersionInfo        `json:"version"`                 // 版本信息
 }
 
 // UserConfigRequest API请求用的用户配置结构
