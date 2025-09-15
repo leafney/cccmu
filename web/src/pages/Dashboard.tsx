@@ -136,6 +136,9 @@ export function Dashboard() {
           };
           
           setConfig(adjustedConfig);
+          
+          // 初始化自动重置开关状态
+          setIsAutoResetEnabled(adjustedConfig.autoReset?.enabled || false);
         }
 
         // 加载任务运行状态
@@ -178,6 +181,9 @@ export function Dashboard() {
   // 处理配置更新
   const handleConfigUpdate = async (newConfig: IUserConfig) => {
     setConfig(newConfig);
+    
+    // 同步自动重置开关状态
+    setIsAutoResetEnabled(newConfig.autoReset?.enabled || false);
     
     // 检查实际的任务运行状态，确保状态同步
     try {
@@ -389,10 +395,31 @@ export function Dashboard() {
   // 切换自动重置状态
   const toggleAutoReset = async () => {
     try {
-      // TODO: 实现自动重置API调用
+      if (!config) {
+        toast.error('配置未加载');
+        return;
+      }
+
+      const requestConfig: IUserConfigRequest = {
+        interval: config.interval,
+        timeRange: config.timeRange,
+        enabled: config.enabled,
+        autoReset: {
+          ...config.autoReset,
+          enabled: !isAutoResetEnabled
+        }
+      };
+
+      await apiClient.updateConfig(requestConfig);
+      
+      // 更新本地状态
+      setConfig(prev => prev ? {
+        ...prev,
+        autoReset: { ...prev.autoReset, enabled: !isAutoResetEnabled }
+      } : prev);
       setIsAutoResetEnabled(!isAutoResetEnabled);
-      // 这里将来需要调用后端API来设置自动重置状态
-      toast.success(isAutoResetEnabled ? '已关闭每日积分自动重置功能' : '已开启每日积分自动重置功能');
+      
+      toast.success(isAutoResetEnabled ? '已关闭自动重置功能' : '已开启自动重置功能');
     } catch (error) {
       console.error('切换自动重置状态失败:', error);
       toast.error('操作失败，请稍后重试');
@@ -436,17 +463,20 @@ export function Dashboard() {
               onClick={handleResetCredits}
               disabled={!config?.cookie || !isConnected}
               className={`text-white bg-white/10 px-3 py-1 rounded-lg backdrop-blur-sm hover:bg-white/20 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white/10 ${
-                isAutoResetEnabled
-                  ? 'shadow-[0_0_15px_rgba(168,85,247,0.5)] border border-purple-500/30' // 自动重置：紫色光晕
-                  : config?.dailyResetUsed 
-                    ? 'shadow-[0_0_15px_rgba(239,68,68,0.5)] border border-red-500/30' // 已重置：红色光晕
+                // 最高优先级：已重置显示红色
+                config?.dailyResetUsed 
+                  ? 'shadow-[0_0_15px_rgba(239,68,68,0.5)] border border-red-500/30' // 已重置：红色光晕
+                  // 中优先级：未重置 + 自动重置开启显示紫色
+                  : isAutoResetEnabled
+                    ? 'shadow-[0_0_15px_rgba(168,85,247,0.5)] border border-purple-500/30' // 自动重置启用：紫色光晕
+                    // 默认：未重置 + 自动重置关闭显示绿色
                     : 'shadow-[0_0_15px_rgba(34,197,94,0.5)] border border-green-500/30' // 未重置：绿色光晕
               }`}
               title={
-                isAutoResetEnabled
-                  ? "每日自动重置已启用"
-                  : config?.dailyResetUsed 
-                    ? "今日已重置过积分" 
+                config?.dailyResetUsed 
+                  ? "今日已重置过积分"
+                  : isAutoResetEnabled
+                    ? "自动重置已启用"
                     : "点击重置积分（今日可重置）"
               }
             >
@@ -494,11 +524,11 @@ export function Dashboard() {
               <span className="text-xs text-white/80 hidden md:block">重置</span>
               <button
                 onClick={toggleAutoReset}
-                disabled={!config?.cookie || !isConnected}
+                disabled={!isConnected}
                 className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50 ${
                   isAutoResetEnabled ? 'bg-purple-500' : 'bg-gray-600'
                 }`}
-                title={!isConnected ? "请等待连接建立" : !config?.cookie ? "请先配置Cookie" : "切换自动重置状态"}
+                title={!isConnected ? "请等待连接建立" : "切换自动重置状态"}
               >
                 <span
                   className={`inline-block h-3 w-3 transform rounded-full bg-white transition ${

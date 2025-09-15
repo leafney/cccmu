@@ -82,6 +82,25 @@ func validateTimeFormat(timeStr string) error {
 	return nil
 }
 
+// AutoResetConfig 自动重置配置
+type AutoResetConfig struct {
+	Enabled          bool   `json:"enabled"`          // 是否启用自动重置
+	TimeEnabled      bool   `json:"timeEnabled"`      // 时间触发条件是否启用
+	ResetTime        string `json:"resetTime"`        // 重置时间 "HH:MM" 格式
+	ThresholdEnabled bool   `json:"thresholdEnabled"` // 积分阈值触发是否启用（预留）
+	Threshold        int    `json:"threshold"`        // 积分阈值（预留）
+}
+
+// ValidateTime 验证自动重置时间格式
+func (a *AutoResetConfig) ValidateTime() error {
+	if a.Enabled && a.TimeEnabled && a.ResetTime != "" {
+		if err := validateTimeFormat(a.ResetTime); err != nil {
+			return fmt.Errorf("重置时间格式错误: %v", err)
+		}
+	}
+	return nil
+}
+
 // UserConfig 用户配置
 type UserConfig struct {
 	Cookie                  string             `json:"-"`                       // Claude API Cookie (内部存储，不直接序列化)
@@ -92,6 +111,7 @@ type UserConfig struct {
 	CookieValidationInterval int               `json:"cookieValidationInterval"` // Cookie验证间隔(分钟)
 	DailyResetUsed          bool               `json:"dailyResetUsed"`          // 当日重置是否已使用
 	AutoSchedule            AutoScheduleConfig `json:"autoSchedule"`            // 自动调度配置
+	AutoReset               AutoResetConfig    `json:"autoReset"`               // 自动重置配置
 }
 
 // UserConfigResponse API响应用的用户配置结构
@@ -104,6 +124,7 @@ type UserConfigResponse struct {
 	CookieValidationInterval int               `json:"cookieValidationInterval"` // Cookie验证间隔(分钟)
 	DailyResetUsed          bool               `json:"dailyResetUsed"`          // 当日重置是否已使用
 	AutoSchedule            AutoScheduleConfig `json:"autoSchedule"`            // 自动调度配置
+	AutoReset               AutoResetConfig    `json:"autoReset"`               // 自动重置配置
 }
 
 // UserConfigRequest API请求用的用户配置结构
@@ -113,6 +134,7 @@ type UserConfigRequest struct {
 	TimeRange    int                 `json:"timeRange"`           // 显示时间范围(分钟)
 	Enabled      bool                `json:"enabled"`             // 任务是否启用
 	AutoSchedule *AutoScheduleConfig `json:"autoSchedule,omitempty"` // 自动调度配置（可选）
+	AutoReset    *AutoResetConfig    `json:"autoReset,omitempty"`    // 自动重置配置（可选）
 }
 
 // GetDefaultConfig 获取默认配置
@@ -131,6 +153,12 @@ func GetDefaultConfig() *UserConfig {
 			EndTime:      "",
 			MonitoringOn: true, // 默认时间范围内开启监控
 		},
+		AutoReset: AutoResetConfig{
+			Enabled:          false,
+			ResetTime:        "",
+			ThresholdEnabled: false, // 预留功能，暂不启用
+			Threshold:        0,     // 预留功能，暂不设置
+		},
 	}
 }
 
@@ -145,6 +173,7 @@ func (c *UserConfig) ToResponse() *UserConfigResponse {
 		CookieValidationInterval: c.CookieValidationInterval,
 		DailyResetUsed:          c.DailyResetUsed,
 		AutoSchedule:            c.AutoSchedule, // 包含自动调度配置
+		AutoReset:               c.AutoReset,    // 包含自动重置配置
 	}
 }
 
@@ -163,6 +192,11 @@ func (c *UserConfig) Validate() error {
 	// 验证自动调度配置
 	if err := c.AutoSchedule.ValidateTime(); err != nil {
 		return fmt.Errorf("自动调度配置无效: %v", err)
+	}
+	
+	// 验证自动重置配置
+	if err := c.AutoReset.ValidateTime(); err != nil {
+		return fmt.Errorf("自动重置配置无效: %v", err)
 	}
 	
 	return nil

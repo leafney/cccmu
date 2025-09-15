@@ -11,15 +11,17 @@ import (
 
 // ConfigHandler 配置处理器
 type ConfigHandler struct {
-	db        *database.BadgerDB
-	scheduler *services.SchedulerService
+	db              *database.BadgerDB
+	scheduler       *services.SchedulerService
+	autoResetService *services.AutoResetService
 }
 
 // NewConfigHandler 创建配置处理器
-func NewConfigHandler(db *database.BadgerDB, scheduler *services.SchedulerService) *ConfigHandler {
+func NewConfigHandler(db *database.BadgerDB, scheduler *services.SchedulerService, autoResetService *services.AutoResetService) *ConfigHandler {
 	return &ConfigHandler{
-		db:        db,
-		scheduler: scheduler,
+		db:              db,
+		scheduler:       scheduler,
+		autoResetService: autoResetService,
 	}
 }
 
@@ -87,6 +89,18 @@ func (h *ConfigHandler) UpdateConfig(c *fiber.Ctx) error {
 		}
 	}
 
+	// 如果请求中包含自动重置配置，则更新
+	if requestConfig.AutoReset != nil {
+		oldAutoReset := currentConfig.AutoReset
+		newConfig.AutoReset = *requestConfig.AutoReset
+		
+		log.Printf("[配置更新] 自动重置配置变更:")
+		log.Printf("[配置更新] - 启用状态: %v -> %v", oldAutoReset.Enabled, newConfig.AutoReset.Enabled)
+		if newConfig.AutoReset.Enabled && newConfig.AutoReset.ResetTime != "" {
+			log.Printf("[配置更新] - 重置时间: %s", newConfig.AutoReset.ResetTime)
+		}
+	}
+
 	// 验证配置
 	if err := newConfig.Validate(); err != nil {
 		return c.Status(400).JSON(models.Error(400, "配置验证失败", err))
@@ -98,11 +112,20 @@ func (h *ConfigHandler) UpdateConfig(c *fiber.Ctx) error {
 		return c.Status(500).JSON(models.Error(500, "更新配置失败", err))
 	}
 
+	// 更新自动重置服务配置
+	if h.autoResetService != nil {
+		if err := h.autoResetService.UpdateConfig(&newConfig.AutoReset); err != nil {
+			log.Printf("更新自动重置服务配置失败: %v", err)
+			return c.Status(500).JSON(models.Error(500, "更新自动重置配置失败", err))
+		}
+	}
+
 	log.Printf("[配置更新] 配置已更新完成:")
 	log.Printf("[配置更新] - 间隔: %d秒", newConfig.Interval)
 	log.Printf("[配置更新] - 时间范围: %d分钟", newConfig.TimeRange)
 	log.Printf("[配置更新] - 监控启用: %v", newConfig.Enabled)
 	log.Printf("[配置更新] - 自动调度: %v", newConfig.AutoSchedule.Enabled)
+	log.Printf("[配置更新] - 自动重置: %v", newConfig.AutoReset.Enabled)
 
 	// 通过SSE通知前端配置已更新
 	log.Printf("[配置更新] 通知前端配置变更...")

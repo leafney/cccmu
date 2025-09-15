@@ -408,6 +408,60 @@ func (s *SchedulerService) FetchAllDataManually() error {
 	return nil
 }
 
+// ResetCreditsManually 手动重置积分（供自动重置服务调用）
+func (s *SchedulerService) ResetCreditsManually() error {
+	// 获取当前配置
+	config, err := s.db.GetConfig()
+	if err != nil {
+		log.Printf("[手动重置] 获取配置失败: %v", err)
+		return fmt.Errorf("获取配置失败: %w", err)
+	}
+
+	// 检查Cookie是否配置
+	if config.Cookie == "" {
+		log.Printf("[手动重置] Cookie未配置")
+		return fmt.Errorf("Cookie未配置")
+	}
+
+	// 调用积分重置API
+	apiClient := client.NewClaudeAPIClient(config.Cookie)
+	resetSuccess, resetInfo, err := apiClient.ResetCredits()
+	if err != nil {
+		log.Printf("[手动重置] 调用重置积分API失败: %v", err)
+		return fmt.Errorf("调用重置积分API失败: %w", err)
+	}
+
+	if !resetSuccess {
+		log.Printf("[手动重置] 重置积分API返回失败")
+		return fmt.Errorf("重置积分API返回失败")
+	}
+
+	// API调用成功后，标记今日已使用重置
+	config.DailyResetUsed = true
+
+	// 保存配置
+	if err := s.db.SaveConfig(config); err != nil {
+		log.Printf("[手动重置] 保存配置失败: %v", err)
+		return fmt.Errorf("保存配置失败: %w", err)
+	}
+
+	log.Printf("[手动重置] 积分重置成功，已标记今日已使用重置。重置信息: %s", resetInfo)
+
+	// 通知重置状态变化（SSE推送给前端）
+	s.NotifyResetStatusChange(true)
+
+	// 触发数据刷新，获取最新的积分余额
+	// 延迟2秒后查询，确保服务端处理完重置操作
+	go func() {
+		time.Sleep(2 * time.Second)
+		if err := s.FetchBalanceManually(); err != nil {
+			log.Printf("[手动重置] 重置后刷新积分余额失败: %v", err)
+		}
+	}()
+
+	return nil
+}
+
 // resetDailyFlags 重置每日标记（每天0点执行）
 func (s *SchedulerService) resetDailyFlags() error {
 	// 获取当前配置

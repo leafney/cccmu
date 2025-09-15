@@ -14,6 +14,15 @@ export interface IAutoScheduleConfig {
   monitoringOn: boolean;      // 时间范围内是开启还是关闭监控
 }
 
+// 自动重置配置
+export interface IAutoResetConfig {
+  enabled: boolean;          // 是否启用自动重置
+  timeEnabled: boolean;      // 时间触发条件是否启用
+  resetTime: string;         // 重置时间 "HH:MM"
+  thresholdEnabled: boolean; // 积分阈值触发是否启用（预留）
+  threshold: number;         // 积分阈值（预留）
+}
+
 // 用户配置（API响应）
 export interface IUserConfig {
   cookie: boolean;                  // Cookie配置状态
@@ -22,6 +31,7 @@ export interface IUserConfig {
   enabled: boolean;
   dailyResetUsed: boolean;          // 当日重置是否已使用
   autoSchedule: IAutoScheduleConfig; // 自动调度配置
+  autoReset: IAutoResetConfig;       // 自动重置配置
 }
 
 // 用户配置（API请求）
@@ -31,6 +41,7 @@ export interface IUserConfigRequest {
   timeRange: number;                // 分钟
   enabled: boolean;
   autoSchedule?: IAutoScheduleConfig; // 自动调度配置（可选）
+  autoReset?: IAutoResetConfig;       // 自动重置配置（可选）
 }
 
 // API响应格式

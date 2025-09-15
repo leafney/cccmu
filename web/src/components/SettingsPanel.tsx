@@ -20,6 +20,13 @@ export function SettingsPanel({ className = '', onConfigUpdate }: SettingsPanelP
       startTime: '',
       endTime: '',
       monitoringOn: true
+    },
+    autoReset: {
+      enabled: false,
+      timeEnabled: false,
+      resetTime: '',
+      thresholdEnabled: false,
+      threshold: 0
     }
   });
   const [cookieInput, setCookieInput] = useState<string>('');

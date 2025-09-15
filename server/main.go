@@ -68,6 +68,22 @@ func main() {
 	}
 	defer scheduler.Shutdown()
 
+	// 初始化自动重置服务
+	autoResetService := services.NewAutoResetService(db, scheduler)
+	if autoResetService == nil {
+		log.Fatalf("初始化自动重置服务失败")
+	}
+	defer func() {
+		if err := autoResetService.Stop(); err != nil {
+			log.Printf("停止自动重置服务失败: %v", err)
+		}
+	}()
+
+	// 启动自动重置服务
+	if err := autoResetService.Start(); err != nil {
+		log.Printf("启动自动重置服务失败: %v", err)
+	}
+
 	// 初始化Fiber应用
 	app := fiber.New(fiber.Config{
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
@@ -92,7 +108,7 @@ func main() {
 	}))
 
 	// 初始化处理器
-	configHandler := handlers.NewConfigHandler(db, scheduler)
+	configHandler := handlers.NewConfigHandler(db, scheduler, autoResetService)
 	controlHandler := handlers.NewControlHandler(scheduler, db)
 	sseHandler := handlers.NewSSEHandler(db, scheduler)
 
