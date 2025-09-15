@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Save, Settings, X, Trash2, HelpCircle, Cog, Info, Activity, RotateCcw } from 'lucide-react';
+import { Save, Settings, X, Trash2, HelpCircle, Cog, Info, Activity, RotateCcw, LogOut } from 'lucide-react';
 import type { IUserConfig, IUserConfigRequest, IMonitoringStatus } from '../types';
 import { apiClient } from '../api/client';
+import { useAuth } from '../hooks/useAuth';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -29,6 +30,7 @@ const TABS: TabItem[] = [
 ];
 
 export function SettingsModal({ isOpen, onClose, onConfigUpdate, isMonitoring = false, monitoringStatus, onMonitoringChange }: SettingsModalProps) {
+  const { logout } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('status');
   const [config, setConfig] = useState<IUserConfig>({
     cookie: false,
@@ -60,6 +62,7 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate, isMonitoring = 
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   // 加载当前配置
   useEffect(() => {
@@ -382,8 +385,75 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate, isMonitoring = 
               </div>
             </div>
           )}
+
+          {/* 退出登录按钮 - 右下角小按钮 */}
+          <div className="absolute bottom-6 right-6">
+            <button
+              onClick={() => setShowLogoutConfirm(true)}
+              className="flex items-center px-3 py-1.5 bg-red-500 text-white text-xs font-medium rounded-md hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500/30 transition-all duration-200 shadow-sm"
+              title="退出登录"
+            >
+              <LogOut className="w-3 h-3 mr-1" />
+              退出
+            </button>
+          </div>
         </div>
       </div>
+      
+      {/* 退出登录确认弹窗 */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 z-[60] overflow-y-auto">
+          {/* 背景遮罩 */}
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
+            onClick={() => setShowLogoutConfirm(false)}
+          />
+          
+          {/* 确认弹窗内容 */}
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="relative bg-white rounded-xl shadow-xl w-full max-w-sm p-6 transform transition-all">
+              {/* 关闭按钮 */}
+              <button
+                onClick={() => setShowLogoutConfirm(false)}
+                className="absolute top-4 right-4 p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              {/* 标题 */}
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                <LogOut className="w-5 h-5 mr-2 text-red-500" />
+                退出登录
+              </h3>
+
+              {/* 内容 */}
+              <p className="text-gray-600 mb-6">
+                确认要退出登录吗？退出后需要重新输入访问密钥。
+              </p>
+
+              {/* 按钮组 */}
+              <div className="flex space-x-3 justify-end">
+                <button
+                  onClick={() => setShowLogoutConfirm(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={() => {
+                    setShowLogoutConfirm(false);
+                    onClose();
+                    logout();
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                >
+                  确认退出
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

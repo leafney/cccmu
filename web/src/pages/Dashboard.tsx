@@ -4,7 +4,7 @@ import { SettingsModal } from '../components/SettingsModal';
 import { LoginPage } from '../components/LoginPage';
 import type { IUsageData, IUserConfig, IUserConfigRequest, ICreditBalance, IMonitoringStatus } from '../types';
 import { apiClient } from '../api/client';
-import { Settings, Wifi, WifiOff, RefreshCw, BarChart3, X, LogOut } from 'lucide-react';
+import { Settings, Wifi, WifiOff, RefreshCw, BarChart3, X } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
 
@@ -587,15 +587,6 @@ export function Dashboard() {
               title="打开设置"
             >
               <Settings className="w-3.5 h-3.5" />
-            </button>
-
-            {/* 登出按钮 */}
-            <button
-              onClick={logout}
-              className="p-1 text-white/80 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors"
-              title="退出登录"
-            >
-              <LogOut className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>

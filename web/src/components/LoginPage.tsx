@@ -66,7 +66,7 @@ export function LoginPage() {
         </div>
 
         {/* 登录表单 */}
-        <div className="bg-white/10 backdrop-blur-sm rounded-xl border border-white/20 shadow-xl p-8">
+        <div className="bg-white/10 backdrop-blur-sm rounded-xl border border-white/20 shadow-xl p-8 w-full max-w-lg">
           <form onSubmit={handleSubmit}>
             <div className="relative">
               {/* 帮助图标和浮层 */}
@@ -92,21 +92,21 @@ export function LoginPage() {
               </div>
 
               {/* 输入框和确认按钮 */}
-              <div className="flex">
+              <div className="flex shadow-lg">
                 <input
                   ref={inputRef}
                   type="password"
                   value={key}
                   onChange={(e) => setKey(e.target.value)}
                   onKeyPress={handleKeyPress}
-                  className="flex-1 pl-12 pr-4 py-3 bg-white/20 border border-white/30 placeholder-white/50 text-white rounded-l-lg focus:outline-none focus:ring-2 focus:ring-white/50 focus:border-white/50 focus:bg-white/25 transition-all duration-200 text-sm"
+                  className="flex-1 pl-12 pr-4 py-3 bg-white/15 border-2 border-white/30 placeholder-white/60 text-white rounded-l-xl focus:outline-none focus:ring-4 focus:ring-blue-400/30 focus:border-blue-300/50 focus:bg-white/20 disabled:opacity-70 transition-all duration-300 text-base backdrop-blur-md"
                   placeholder="请输入访问密钥"
                   disabled={isLoggingIn}
                 />
                 <button
                   type="submit"
                   disabled={isLoggingIn || !key.trim()}
-                  className="px-4 bg-white/20 border border-l-0 border-white/30 text-white hover:bg-white/30 hover:border-white/40 focus:outline-none focus:ring-2 focus:ring-white/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 backdrop-blur-sm rounded-r-lg flex items-center justify-center"
+                  className="px-6 bg-gradient-to-r from-blue-500/80 to-purple-500/80 border-2 border-l-0 border-blue-400/50 text-white hover:from-blue-400/90 hover:to-purple-400/90 hover:border-blue-300/60 hover:shadow-lg focus:outline-none focus:ring-4 focus:ring-blue-400/30 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none transition-all duration-300 backdrop-blur-md rounded-r-xl flex items-center justify-center"
                 >
                   {isLoggingIn ? (
                     <Loader2 className="h-5 w-5 animate-spin" />
