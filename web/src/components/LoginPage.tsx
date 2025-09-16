@@ -66,7 +66,7 @@ export function LoginPage() {
         </div>
 
         {/* 登录表单 */}
-        <div className="bg-white/10 backdrop-blur-sm rounded-xl border border-white/20 shadow-xl p-8 w-full max-w-lg">
+        <div className="bg-white/10 backdrop-blur-sm rounded-xl border border-white/20 shadow-xl p-8 w-full max-w-3xl">
           <form onSubmit={handleSubmit}>
             <div className="relative">
               {/* 帮助图标和浮层 */}
@@ -99,7 +99,7 @@ export function LoginPage() {
                   value={key}
                   onChange={(e) => setKey(e.target.value)}
                   onKeyPress={handleKeyPress}
-                  className="flex-1 pl-12 pr-4 py-3 bg-white/15 border-2 border-white/30 placeholder-white/60 text-white rounded-l-xl focus:outline-none focus:ring-4 focus:ring-blue-400/30 focus:border-blue-300/50 focus:bg-white/20 disabled:opacity-70 transition-all duration-300 text-base backdrop-blur-md"
+                  className="flex-1 pl-12 pr-4 py-2.5 bg-white/15 border-2 border-white/30 placeholder-white/60 text-white rounded-l-xl focus:outline-none focus:ring-4 focus:ring-blue-400/30 focus:border-blue-300/50 focus:bg-white/20 disabled:opacity-70 transition-all duration-300 text-base backdrop-blur-md"
                   placeholder="请输入访问密钥"
                   disabled={isLoggingIn}
                 />

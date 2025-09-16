@@ -323,6 +323,7 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate, isMonitoring = 
                 <StatusInfoTab 
                   config={config}
                   monitoringStatus={isMonitoring}
+                  onLogout={() => setShowLogoutConfirm(true)}
                 />
               )}
               
@@ -386,17 +387,6 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate, isMonitoring = 
             </div>
           )}
 
-          {/* 退出登录按钮 - 右下角小按钮 */}
-          <div className="absolute bottom-6 right-6">
-            <button
-              onClick={() => setShowLogoutConfirm(true)}
-              className="flex items-center px-3 py-1.5 bg-red-500 text-white text-xs font-medium rounded-md hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500/30 transition-all duration-200 shadow-sm"
-              title="退出登录"
-            >
-              <LogOut className="w-3 h-3 mr-1" />
-              退出
-            </button>
-          </div>
         </div>
       </div>
       
@@ -1014,13 +1004,15 @@ function AutoResetTab({
 // 状态信息标签页组件
 function StatusInfoTab({ 
   config, 
-  monitoringStatus 
+  monitoringStatus,
+  onLogout
 }: {
   config: IUserConfig;
   monitoringStatus: boolean;
+  onLogout: () => void;
 }) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">      
       {/* 当前运行状态 */}
       <div>
         <div className="flex items-center mb-4">
@@ -1133,6 +1125,18 @@ function StatusInfoTab({
             <span className="text-xs text-blue-600">外部链接 ↗</span>
           </a>
         </div>
+      </div>
+
+      {/* 退出登录按钮 - 右下角 */}
+      <div className="flex justify-end pt-4">
+        <button
+          onClick={onLogout}
+          className="flex items-center px-3 py-1.5 bg-red-500 text-white text-xs font-medium rounded-md hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500/30 transition-all duration-200 shadow-sm"
+          title="退出登录"
+        >
+          <LogOut className="w-3 h-3 mr-1" />
+          退出
+        </button>
       </div>
     </div>
   );
