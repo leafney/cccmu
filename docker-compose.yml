@@ -4,7 +4,4 @@ services:
     container_name: cccmu
     ports:
       - "8080:8080"
-    volumes:
-    # 挂载.auth文件，用于存储登录信息，先在主机上创建一个空文件：`touch .auth`
-      - ./.auth:/app/.auth
     restart: unless-stopped

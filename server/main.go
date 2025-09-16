@@ -60,6 +60,9 @@ func main() {
 	// 初始化日志系统
 	utils.InitLogger(enableLog)
 
+	// 设置版本信息到handlers包
+	handlers.SetVersionInfo(Version, GitCommit, BuildTime)
+
 	// 解析会话过期时间（默认以小时为单位）
 	var expireDuration time.Duration
 	var err error

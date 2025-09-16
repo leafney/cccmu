@@ -8,15 +8,15 @@ BUILD_DIR=dist
 BIN_DIR=bin
 
 # 版本信息
-VERSION ?= $(shell git describe --tags --exact-match 2>/dev/null || git rev-parse --short HEAD)
+VERSION ?= $(shell git describe --tags --exact-match 2>/dev/null || echo "dev")
 GIT_COMMIT := $(shell git rev-parse --short HEAD)
 BUILD_TIME := $(shell date '+%Y-%m-%d %H:%M:%S')
 
 # 编译参数
 LDFLAGS := -s -w
-LDFLAGS += -X 'main.Version=$(VERSION)'
-LDFLAGS += -X 'main.GitCommit=$(GIT_COMMIT)'
-LDFLAGS += -X 'main.BuildTime=$(BUILD_TIME)'
+LDFLAGS += -X main.Version=$(VERSION)
+LDFLAGS += -X main.GitCommit=$(GIT_COMMIT)
+LDFLAGS += -X main.BuildTime=$(BUILD_TIME)
 
 # 默认目标
 .PHONY: help
