@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -42,7 +41,7 @@ func getBoolFromEnv(key string, defaultValue bool) bool {
 	if value == "" {
 		return defaultValue
 	}
-	
+
 	// 支持多种格式：true/false, yes/no, 1/0, on/off
 	value = strings.ToLower(strings.TrimSpace(value))
 	switch value {
@@ -70,20 +69,20 @@ func main() {
 	var enableLog bool
 	var showVersion bool
 	var sessionExpire string
-	
+
 	pflag.StringVarP(&port, "port", "p", "", "服务器端口号（例如: 8080 或 :8080）")
 	pflag.BoolVarP(&enableLog, "log", "l", false, "启用详细日志输出")
 	pflag.BoolVarP(&showVersion, "version", "v", false, "显示版本信息")
 	pflag.StringVarP(&sessionExpire, "expire", "e", "", "Session过期时间（小时，如: 24, 168）")
 	pflag.Parse()
-	
+
 	// 应用环境变量配置（优先级：命令行参数 > 环境变量 > 默认值）
-	
+
 	// 如果命令行没有设置日志开关，则检查环境变量
 	if !pflag.Lookup("log").Changed {
 		enableLog = getBoolFromEnv("LOG_ENABLED", false)
 	}
-	
+
 	// 如果命令行没有设置Session过期时间，则检查环境变量
 	if !pflag.Lookup("expire").Changed {
 		sessionExpire = getStringFromEnv("SESSION_EXPIRE", "168")
@@ -107,7 +106,7 @@ func main() {
 	// 解析会话过期时间（默认以小时为单位）
 	var expireDuration time.Duration
 	var err error
-	
+
 	// 如果包含时间单位，直接解析；否则当作小时处理
 	if strings.Contains(sessionExpire, "h") || strings.Contains(sessionExpire, "m") || strings.Contains(sessionExpire, "s") {
 		expireDuration, err = time.ParseDuration(sessionExpire)
@@ -115,7 +114,7 @@ func main() {
 		// 默认按小时处理
 		expireDuration, err = time.ParseDuration(sessionExpire + "h")
 	}
-	
+
 	if err != nil {
 		log.Fatalf("解析Session过期时间失败: %v", err)
 	}
@@ -306,7 +305,7 @@ func main() {
 // getPort 获取端口，优先级：命令行参数 > 环境变量 > 默认端口
 func getPort(flagPort string) string {
 	var port string
-	
+
 	// 优先使用命令行参数
 	if flagPort != "" {
 		port = flagPort
@@ -318,7 +317,7 @@ func getPort(flagPort string) string {
 			port = ":8080"
 		}
 	}
-	
+
 	// 确保端口格式正确（以冒号开头）
 	if port[0] != ':' {
 		port = ":" + port

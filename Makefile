@@ -14,9 +14,9 @@ BUILD_TIME := $(shell date '+%Y-%m-%d %H:%M:%S')
 
 # 编译参数
 LDFLAGS := -s -w
-LDFLAGS += -X main.Version=$(VERSION)
-LDFLAGS += -X main.GitCommit=$(GIT_COMMIT)
-LDFLAGS += -X main.BuildTime=$(BUILD_TIME)
+LDFLAGS += -X 'main.Version=$(VERSION)'
+LDFLAGS += -X 'main.GitCommit=$(GIT_COMMIT)'
+LDFLAGS += -X 'main.BuildTime=$(BUILD_TIME)'
 
 # 默认目标
 .PHONY: help
@@ -59,7 +59,7 @@ dev-frontend:
 .PHONY: dev-backend
 dev-backend:
 	@echo "启动后端开发服务器..."
-	cd $(BACKEND_DIR) && go run main.go
+	go run $(BACKEND_DIR)/main.go
 
 .PHONY: dev
 dev:
@@ -80,7 +80,7 @@ build-backend: build-frontend
 	@echo "创建bin目录..."
 	@mkdir -p $(BIN_DIR)
 	@echo "编译后端二进制文件..."
-	cd $(BACKEND_DIR) && go mod tidy && go build -ldflags="$(LDFLAGS)" -o ../$(BIN_DIR)/$(BINARY_NAME) main.go
+	go mod tidy && go build -ldflags="$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY_NAME) $(BACKEND_DIR)/main.go
 
 .PHONY: build
 build: build-backend
@@ -115,21 +115,21 @@ clean:
 .PHONY: test
 test:
 	@echo "运行Go测试..."
-	cd $(BACKEND_DIR) && go test -v ./...
+	go test -v ./$(BACKEND_DIR)/...
 	@echo "运行前端测试..."
 	cd $(FRONTEND_DIR) && bun test
 
 .PHONY: fmt
 fmt:
 	@echo "格式化Go代码..."
-	cd $(BACKEND_DIR) && go fmt ./...
+	go fmt ./$(BACKEND_DIR)/...
 	@echo "格式化前端代码..."
 	cd $(FRONTEND_DIR) && bun run format
 
 .PHONY: lint
 lint:
 	@echo "Go代码检查..."
-	cd $(BACKEND_DIR) && go vet ./...
+	go vet ./$(BACKEND_DIR)/...
 	@echo "前端代码检查..."
 	cd $(FRONTEND_DIR) && bun run lint
 
@@ -137,7 +137,7 @@ lint:
 .PHONY: install
 install:
 	@echo "安装Go依赖..."
-	cd $(BACKEND_DIR) && go mod tidy
+	go mod tidy
 	@echo "安装前端依赖..."
 	cd $(FRONTEND_DIR) && bun install
 
