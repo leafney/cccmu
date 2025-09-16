@@ -15,18 +15,21 @@ import (
 
 // SchedulerService 定时任务服务
 type SchedulerService struct {
-	scheduler        gocron.Scheduler
-	db               *database.BadgerDB
-	apiClient        *client.ClaudeAPIClient
-	config           *models.UserConfig
-	isRunning        bool
-	mu               sync.RWMutex
-	lastData         []models.UsageData
-	listeners        []chan []models.UsageData
-	lastBalance      *models.CreditBalance
-	balanceListeners []chan *models.CreditBalance
-	errorListeners   []chan string
-	resetStatusListeners []chan bool
+	scheduler             gocron.Scheduler
+	dailyResetScheduler   gocron.Scheduler // 单独的每日重置任务调度器
+	db                    *database.BadgerDB
+	apiClient             *client.ClaudeAPIClient
+	config                *models.UserConfig
+	isRunning             bool
+	mu                    sync.RWMutex
+	lastData              []models.UsageData
+	listeners             []chan []models.UsageData
+	lastBalance           *models.CreditBalance
+	balanceListeners      []chan *models.CreditBalance
+	errorListeners        []chan string
+	resetStatusListeners  []chan bool
+	autoScheduler         *AutoSchedulerService
+	autoScheduleListeners []chan bool // 自动调度状态变化监听器
 }
 
 // NewSchedulerService 创建新的调度服务
@@ -34,6 +37,12 @@ func NewSchedulerService(db *database.BadgerDB) (*SchedulerService, error) {
 	scheduler, err := gocron.NewScheduler()
 	if err != nil {
 		return nil, fmt.Errorf("创建调度器失败: %w", err)
+	}
+
+	// 创建单独的每日重置任务调度器
+	dailyResetScheduler, err := gocron.NewScheduler()
+	if err != nil {
+		return nil, fmt.Errorf("创建每日重置调度器失败: %w", err)
 	}
 
 	config, err := db.GetConfig()
@@ -45,18 +54,49 @@ func NewSchedulerService(db *database.BadgerDB) (*SchedulerService, error) {
 	apiClient := client.NewClaudeAPIClient(config.Cookie)
 
 	service := &SchedulerService{
-		scheduler:        scheduler,
-		db:               db,
-		apiClient:        apiClient,
-		config:           config,
-		isRunning:        false,
-		listeners:        make([]chan []models.UsageData, 0),
-		balanceListeners: make([]chan *models.CreditBalance, 0),
-		errorListeners:   make([]chan string, 0),
-		resetStatusListeners: make([]chan bool, 0),
+		scheduler:             scheduler,
+		dailyResetScheduler:   dailyResetScheduler,
+		db:                    db,
+		apiClient:             apiClient,
+		config:                config,
+		isRunning:             false,
+		listeners:             make([]chan []models.UsageData, 0),
+		balanceListeners:      make([]chan *models.CreditBalance, 0),
+		errorListeners:        make([]chan string, 0),
+		resetStatusListeners:  make([]chan bool, 0),
+		autoScheduleListeners: make([]chan bool, 0),
+	}
+
+	// 创建自动调度服务
+	service.autoScheduler = NewAutoSchedulerService(service)
+
+	// 立即创建每日重置任务（只需创建一次）
+	if err := service.createDailyResetTask(); err != nil {
+		log.Printf("创建每日重置任务失败: %v", err)
 	}
 
 	return service, nil
+}
+
+// createDailyResetTask 创建每日重置任务
+func (s *SchedulerService) createDailyResetTask() error {
+	// 添加每日0点重置标记的定时任务
+	dailyResetJob, err := s.dailyResetScheduler.NewJob(
+		gocron.CronJob("0 0 * * *", false), // 每日0点执行
+		gocron.NewTask(s.resetDailyFlags),
+		gocron.WithSingletonMode(gocron.LimitModeReschedule),
+	)
+	if err != nil {
+		return fmt.Errorf("创建每日重置标记定时任务失败: %w", err)
+	}
+
+	log.Printf("每日重置标记定时任务创建成功，任务ID: %v", dailyResetJob.ID())
+
+	// 启动每日重置调度器
+	s.dailyResetScheduler.Start()
+	log.Printf("每日重置调度器已启动")
+
+	return nil
 }
 
 // Start 启动定时任务
@@ -85,8 +125,8 @@ func (s *SchedulerService) Start() error {
 
 	// 验证Cookie（通过获取积分余额隐式验证）
 	s.apiClient.UpdateCookie(s.config.Cookie)
-	if _, err := s.apiClient.FetchCreditBalance(); err != nil {
-		return fmt.Errorf("Cookie验证失败: %w", err)
+	if _, cookieErr := s.apiClient.FetchCreditBalance(); cookieErr != nil {
+		return fmt.Errorf("cookie验证失败: %w", cookieErr)
 	}
 
 	// 添加使用数据定时任务
@@ -112,19 +152,8 @@ func (s *SchedulerService) Start() error {
 		return fmt.Errorf("创建积分余额定时任务失败: %w", err)
 	}
 
-	// 添加每日0点重置标记的定时任务
-	dailyResetJob, err := s.scheduler.NewJob(
-		gocron.CronJob("0 0 * * *", false), // 每日0点执行
-		gocron.NewTask(s.resetDailyFlags),
-		gocron.WithSingletonMode(gocron.LimitModeReschedule),
-	)
-	if err != nil {
-		return fmt.Errorf("创建每日重置标记定时任务失败: %w", err)
-	}
-
 	log.Printf("使用数据定时任务创建成功，任务ID: %v，间隔: %d秒", usageJob.ID(), s.config.Interval)
 	log.Printf("积分余额定时任务创建成功，任务ID: %v，间隔: %d秒", balanceJob.ID(), s.config.Interval)
-	log.Printf("每日重置标记定时任务创建成功，任务ID: %v", dailyResetJob.ID())
 
 	// 启动调度器
 	s.scheduler.Start()
@@ -189,7 +218,24 @@ func (s *SchedulerService) IsRunning() bool {
 	return s.isRunning
 }
 
-// UpdateConfig 更新配置并重启任务
+// needsTaskRestart 检查配置更新是否需要重启定时任务（内部方法）
+func (s *SchedulerService) needsTaskRestart(oldConfig, newConfig *models.UserConfig) bool {
+	if oldConfig == nil {
+		return newConfig.Enabled // 首次配置，根据是否启用决定
+	}
+
+	// 检查影响定时任务的关键配置项
+	return oldConfig.Interval != newConfig.Interval || // 监控间隔变化
+		oldConfig.Cookie != newConfig.Cookie || // Cookie变化
+		oldConfig.Enabled != newConfig.Enabled // 启用状态变化
+}
+
+// NeedsTaskRestart 检查配置更新是否需要重启定时任务（公共方法）
+func (s *SchedulerService) NeedsTaskRestart(oldConfig, newConfig *models.UserConfig) bool {
+	return s.needsTaskRestart(oldConfig, newConfig)
+}
+
+// UpdateConfig 更新配置并按需重启任务（同步版本，已弃用，保留兼容性）
 func (s *SchedulerService) UpdateConfig(newConfig *models.UserConfig) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -199,23 +245,142 @@ func (s *SchedulerService) UpdateConfig(newConfig *models.UserConfig) error {
 		return fmt.Errorf("保存配置失败: %w", err)
 	}
 
+	oldConfig := s.config
 	wasRunning := s.isRunning
+	needsRestart := s.needsTaskRestart(oldConfig, newConfig)
 
-	// 如果任务正在运行，先停止
-	if s.isRunning {
-		s.scheduler.StopJobs()
-		s.scheduler.Shutdown()
-		s.isRunning = false
+	// 记录配置更新情况
+	if needsRestart {
+		log.Printf("配置更新：检测到关键参数变化，需要重启定时任务")
+		log.Printf("配置差异：间隔 %d->%d秒, 启用 %v->%v",
+			func() int {
+				if oldConfig != nil {
+					return oldConfig.Interval
+				} else {
+					return 0
+				}
+			}(),
+			newConfig.Interval,
+			func() bool {
+				if oldConfig != nil {
+					return oldConfig.Enabled
+				} else {
+					return false
+				}
+			}(),
+			newConfig.Enabled)
+	} else {
+		log.Printf("配置更新：仅更新非关键参数，无需重启任务")
 	}
 
+	// 更新配置引用
 	s.config = newConfig
 	s.apiClient.UpdateCookie(newConfig.Cookie)
 
-	// 如果新配置启用且之前在运行，重新启动
-	if newConfig.Enabled && wasRunning {
-		return s.startWithoutLock()
+	// 更新自动调度配置（不直接触发任务启停）
+	if s.autoScheduler != nil {
+		s.autoScheduler.UpdateConfig(&newConfig.AutoSchedule)
 	}
 
+	// 只在必要时重启任务
+	if needsRestart {
+		// 如果任务正在运行，先停止
+		if wasRunning {
+			s.scheduler.StopJobs()
+			s.scheduler.Shutdown()
+			s.isRunning = false
+			log.Printf("已停止旧定时任务")
+		}
+
+		// 如果新配置启用且之前在运行，重新启动
+		if newConfig.Enabled && wasRunning {
+			return s.startWithoutLock()
+		}
+	}
+
+	return nil
+}
+
+// UpdateConfigAsync 异步更新配置（仅处理重型操作，数据库保存已在同步阶段完成）
+func (s *SchedulerService) UpdateConfigAsync(oldConfig, newConfig *models.UserConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	wasRunning := s.isRunning
+	needsRestart := s.needsTaskRestart(oldConfig, newConfig)
+
+	// 记录配置更新情况
+	if needsRestart {
+		log.Printf("[异步配置] 检测到关键参数变化，需要重启定时任务")
+		log.Printf("[异步配置] 配置差异：间隔 %d->%d秒, 启用 %v->%v",
+			func() int {
+				if oldConfig != nil {
+					return oldConfig.Interval
+				} else {
+					return 0
+				}
+			}(),
+			newConfig.Interval,
+			func() bool {
+				if oldConfig != nil {
+					return oldConfig.Enabled
+				} else {
+					return false
+				}
+			}(),
+			newConfig.Enabled)
+	} else {
+		log.Printf("[异步配置] 仅更新非关键参数，无需重启任务")
+	}
+
+	// 更新配置引用
+	s.config = newConfig
+	s.apiClient.UpdateCookie(newConfig.Cookie)
+
+	// 更新自动调度配置（不直接触发任务启停）
+	if s.autoScheduler != nil {
+		s.autoScheduler.UpdateConfig(&newConfig.AutoSchedule)
+	}
+
+	// 只在必要时重启任务
+	if needsRestart {
+		// 如果任务正在运行，先停止
+		if wasRunning {
+			log.Printf("[异步配置] 停止旧定时任务...")
+			s.scheduler.StopJobs()
+			s.scheduler.Shutdown()
+			s.isRunning = false
+			log.Printf("[异步配置] 旧定时任务已停止")
+		}
+
+		// 如果新配置启用且之前在运行，重新启动
+		if newConfig.Enabled && wasRunning {
+			log.Printf("[异步配置] 重新启动定时任务...")
+			return s.startWithoutLock()
+		}
+	}
+
+	return nil
+}
+
+// UpdateConfigSync 同步更新配置（仅保存到数据库和更新内存配置，不进行重型操作）
+func (s *SchedulerService) UpdateConfigSync(newConfig *models.UserConfig) error {
+	// 仅保存配置到数据库
+	if err := s.db.SaveConfig(newConfig); err != nil {
+		return fmt.Errorf("保存配置失败: %w", err)
+	}
+
+	// 更新内存中的非重型配置
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// 对于不需要重启任务的配置直接更新
+	if s.config != nil {
+		// 更新时间范围等不影响任务运行的配置
+		s.config.TimeRange = newConfig.TimeRange
+	}
+
+	log.Printf("[同步配置] 配置已同步保存到数据库")
 	return nil
 }
 
@@ -227,18 +392,19 @@ func (s *SchedulerService) startWithoutLock() error {
 
 	// 验证Cookie（通过获取积分余额隐式验证）
 	if _, err := s.apiClient.FetchCreditBalance(); err != nil {
-		return fmt.Errorf("Cookie验证失败: %w", err)
+		return fmt.Errorf("cookie验证失败: %w", err)
 	}
 
-	// 创建新的调度器
+	// 创建新的调度器，确保任务配置是最新的
 	scheduler, err := gocron.NewScheduler()
 	if err != nil {
 		return fmt.Errorf("创建调度器失败: %w", err)
 	}
 	s.scheduler = scheduler
+	log.Printf("已创建新的调度器实例")
 
 	// 添加使用数据定时任务
-	usageJob, err := s.scheduler.NewJob(
+	_, err = s.scheduler.NewJob(
 		gocron.DurationJob(time.Duration(s.config.Interval)*time.Second),
 		gocron.NewTask(s.fetchAndSaveData),
 		gocron.WithSingletonMode(gocron.LimitModeReschedule),
@@ -248,7 +414,7 @@ func (s *SchedulerService) startWithoutLock() error {
 	}
 
 	// 添加积分余额定时任务，间隔错开30秒执行
-	balanceJob, err := s.scheduler.NewJob(
+	_, err = s.scheduler.NewJob(
 		gocron.DurationJob(time.Duration(s.config.Interval)*time.Second),
 		gocron.NewTask(s.fetchAndSaveBalance),
 		gocron.WithSingletonMode(gocron.LimitModeReschedule),
@@ -260,24 +426,13 @@ func (s *SchedulerService) startWithoutLock() error {
 		return fmt.Errorf("创建积分余额定时任务失败: %w", err)
 	}
 
-	// 添加每日0点重置标记的定时任务
-	dailyResetJob, err := s.scheduler.NewJob(
-		gocron.CronJob("0 0 * * *", false), // 每日0点执行
-		gocron.NewTask(s.resetDailyFlags),
-		gocron.WithSingletonMode(gocron.LimitModeReschedule),
-	)
-	if err != nil {
-		return fmt.Errorf("创建每日重置标记定时任务失败: %w", err)
-	}
-
-	log.Printf("使用数据定时任务重建成功，任务ID: %v，间隔: %d秒", usageJob.ID(), s.config.Interval)
-	log.Printf("积分余额定时任务重建成功，任务ID: %v，间隔: %d秒", balanceJob.ID(), s.config.Interval)
-	log.Printf("每日重置标记定时任务重建成功，任务ID: %v", dailyResetJob.ID())
+	log.Printf("使用数据定时任务已创建，间隔: %d秒", s.config.Interval)
+	log.Printf("积分余额定时任务已创建，间隔: %d秒", s.config.Interval)
 
 	s.scheduler.Start()
 	s.isRunning = true
 
-	log.Printf("定时任务已重启，间隔: %d秒", s.config.Interval)
+	log.Printf("定时任务已启动，间隔: %d秒", s.config.Interval)
 
 	// 重启时不立即执行，等待定时任务自然触发
 
@@ -315,12 +470,12 @@ func (s *SchedulerService) FetchAllDataManually() error {
 	if err != nil {
 		return fmt.Errorf("读取配置失败: %w", err)
 	}
-	
+
 	// 验证cookie是否已配置
 	if config.Cookie == "" {
 		return fmt.Errorf("Cookie未配置，请先设置Cookie")
 	}
-	
+
 	s.config = config
 	s.apiClient.UpdateCookie(config.Cookie)
 
@@ -352,6 +507,60 @@ func (s *SchedulerService) FetchAllDataManually() error {
 	return nil
 }
 
+// ResetCreditsManually 手动重置积分（供自动重置服务调用）
+func (s *SchedulerService) ResetCreditsManually() error {
+	// 获取当前配置
+	config, err := s.db.GetConfig()
+	if err != nil {
+		log.Printf("[手动重置] 获取配置失败: %v", err)
+		return fmt.Errorf("获取配置失败: %w", err)
+	}
+
+	// 检查Cookie是否配置
+	if config.Cookie == "" {
+		log.Printf("[手动重置] Cookie未配置")
+		return fmt.Errorf("Cookie未配置")
+	}
+
+	// 调用积分重置API
+	apiClient := client.NewClaudeAPIClient(config.Cookie)
+	resetSuccess, resetInfo, err := apiClient.ResetCredits()
+	if err != nil {
+		log.Printf("[手动重置] 调用重置积分API失败: %v", err)
+		return fmt.Errorf("调用重置积分API失败: %w", err)
+	}
+
+	if !resetSuccess {
+		log.Printf("[手动重置] 重置积分API返回失败")
+		return fmt.Errorf("重置积分API返回失败")
+	}
+
+	// API调用成功后，标记今日已使用重置
+	config.DailyResetUsed = true
+
+	// 保存配置
+	if err := s.db.SaveConfig(config); err != nil {
+		log.Printf("[手动重置] 保存配置失败: %v", err)
+		return fmt.Errorf("保存配置失败: %w", err)
+	}
+
+	log.Printf("[手动重置] 积分重置成功，已标记今日已使用重置。重置信息: %s", resetInfo)
+
+	// 通知重置状态变化（SSE推送给前端）
+	s.NotifyResetStatusChange(true)
+
+	// 触发数据刷新，获取最新的积分余额
+	// 延迟10秒后查询，确保服务端处理完重置操作
+	go func() {
+		time.Sleep(10 * time.Second)
+		if err := s.FetchBalanceManually(); err != nil {
+			log.Printf("[手动重置] 重置后刷新积分余额失败: %v", err)
+		}
+	}()
+
+	return nil
+}
+
 // resetDailyFlags 重置每日标记（每天0点执行）
 func (s *SchedulerService) resetDailyFlags() error {
 	// 获取当前配置
@@ -371,10 +580,10 @@ func (s *SchedulerService) resetDailyFlags() error {
 	}
 
 	log.Println("每日重置标记已重置为false")
-	
+
 	// 通过SSE推送重置状态变化到前端
 	s.notifyResetStatusListeners(false)
-	
+
 	return nil
 }
 
@@ -416,6 +625,20 @@ func (s *SchedulerService) fetchAndSaveBalance() error {
 	s.notifyBalanceListeners(balance)
 
 	return nil
+}
+
+// NotifyConfigUpdateError 通知配置更新错误
+func (s *SchedulerService) NotifyConfigUpdateError(jobType, jobID, errorMsg string) {
+	message := fmt.Sprintf("配置更新失败 [%s:%s]: %s", jobType, jobID, errorMsg)
+	s.notifyErrorListeners(message)
+}
+
+// NotifyConfigUpdateSuccess 通知配置更新成功
+func (s *SchedulerService) NotifyConfigUpdateSuccess(jobType, jobID string) {
+	message := fmt.Sprintf("配置更新成功 [%s:%s]", jobType, jobID)
+	log.Printf("[SSE通知] %s", message)
+	// 成功消息可以通过其他机制通知，例如配置变更通知
+	s.NotifyConfigChange()
 }
 
 // GetLatestData 获取最新数据
@@ -600,9 +823,136 @@ func (s *SchedulerService) NotifyConfigChange() {
 	s.notifyListeners(data)
 }
 
+// StartAuto 自动调度启动监控（由自动调度服务调用）
+func (s *SchedulerService) StartAuto() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.isRunning {
+		log.Printf("[自动调度] 监控已在运行，无需启动")
+		return nil // 已经在运行
+	}
+
+	if s.config.Cookie == "" {
+		log.Printf("[自动调度] 启动失败: Cookie未设置")
+		return fmt.Errorf("Cookie未设置")
+	}
+
+	log.Printf("[自动调度] 正在启动监控任务...")
+	// 启动监控任务
+	err := s.startWithoutLock()
+	if err != nil {
+		log.Printf("[自动调度] 监控任务启动失败: %v", err)
+	} else {
+		log.Printf("[自动调度] 监控任务已成功启动")
+	}
+	return err
+}
+
+// StopAuto 自动调度停止监控（由自动调度服务调用）
+func (s *SchedulerService) StopAuto() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !s.isRunning {
+		log.Printf("[自动调度] 监控已停止，无需操作")
+		return nil // 已经停止
+	}
+
+	log.Printf("[自动调度] 正在停止监控任务...")
+	// 停止监控任务
+	s.scheduler.StopJobs()
+	s.scheduler.Shutdown()
+	s.isRunning = false
+
+	log.Printf("[自动调度] 监控任务已成功停止")
+	return nil
+}
+
+// IsAutoScheduleEnabled 检查是否启用了自动调度
+func (s *SchedulerService) IsAutoScheduleEnabled() bool {
+	if s.autoScheduler == nil {
+		return false
+	}
+	return s.autoScheduler.IsEnabled()
+}
+
+// GetAutoScheduler 获取自动调度服务实例
+func (s *SchedulerService) GetAutoScheduler() *AutoSchedulerService {
+	return s.autoScheduler
+}
+
+// IsInAutoScheduleTimeRange 检查当前是否在自动调度时间范围内
+func (s *SchedulerService) IsInAutoScheduleTimeRange() bool {
+	if s.autoScheduler == nil {
+		return false
+	}
+	return s.autoScheduler.IsInTimeRange()
+}
+
+// GetAutoScheduleConfig 获取自动调度配置
+func (s *SchedulerService) GetAutoScheduleConfig() *models.AutoScheduleConfig {
+	if s.autoScheduler == nil {
+		return &models.AutoScheduleConfig{}
+	}
+	return s.autoScheduler.GetConfig()
+}
+
+// AddAutoScheduleListener 添加自动调度状态监听器
+func (s *SchedulerService) AddAutoScheduleListener() chan bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	listener := make(chan bool, 10)
+	s.autoScheduleListeners = append(s.autoScheduleListeners, listener)
+	return listener
+}
+
+// RemoveAutoScheduleListener 移除自动调度状态监听器
+func (s *SchedulerService) RemoveAutoScheduleListener(listener chan bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i, l := range s.autoScheduleListeners {
+		if l == listener {
+			close(l)
+			s.autoScheduleListeners = append(s.autoScheduleListeners[:i], s.autoScheduleListeners[i+1:]...)
+			break
+		}
+	}
+}
+
+// NotifyAutoScheduleChange 通知自动调度状态变化（供自动调度服务调用）
+func (s *SchedulerService) NotifyAutoScheduleChange() {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	isEnabled := s.IsAutoScheduleEnabled()
+	for _, listener := range s.autoScheduleListeners {
+		select {
+		case listener <- isEnabled:
+			// 状态发送成功
+		default:
+			// 通道已满，跳过通知
+		}
+	}
+}
+
 // Shutdown 关闭服务
 func (s *SchedulerService) Shutdown() {
 	s.Stop()
+
+	// 关闭每日重置调度器
+	if s.dailyResetScheduler != nil {
+		s.dailyResetScheduler.StopJobs()
+		s.dailyResetScheduler.Shutdown()
+		log.Printf("每日重置调度器已关闭")
+	}
+
+	// 关闭自动调度服务
+	if s.autoScheduler != nil {
+		s.autoScheduler.Close()
+	}
 
 	// 关闭所有监听器
 	s.mu.Lock()
@@ -618,9 +968,13 @@ func (s *SchedulerService) Shutdown() {
 	for _, listener := range s.resetStatusListeners {
 		close(listener)
 	}
+	for _, listener := range s.autoScheduleListeners {
+		close(listener)
+	}
 	s.listeners = nil
 	s.balanceListeners = nil
 	s.errorListeners = nil
 	s.resetStatusListeners = nil
+	s.autoScheduleListeners = nil
 	s.mu.Unlock()
 }

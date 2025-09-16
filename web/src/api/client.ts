@@ -1,4 +1,16 @@
-import type { IUserConfig, IUserConfigRequest, IAPIResponse, IUsageData, ICreditBalance } from '../types';
+import type { IUserConfig, IUserConfigRequest, IAPIResponse, IUsageData, ICreditBalance, IMonitoringStatus } from '../types';
+
+// 认证相关接口类型（内部使用）
+
+interface ILoginResponse {
+  message: string;
+  expiresAt: string;
+}
+
+interface IAuthStatusResponse {
+  authenticated: boolean;
+  expiresAt?: string;
+}
 
 const API_BASE = '/api';
 const DEFAULT_TIMEOUT = 30000; // 30秒超时
@@ -82,6 +94,26 @@ class APIClient {
     });
   }
 
+  // 登录
+  async login(key: string): Promise<IAPIResponse<ILoginResponse>> {
+    return this.request<ILoginResponse>('/auth/login', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${key}`,
+      },
+    });
+  }
+
+  // 登出
+  async logout(): Promise<IAPIResponse> {
+    return this.request('/auth/logout');
+  }
+
+  // 检查认证状态
+  async checkAuthStatus(): Promise<IAPIResponse<IAuthStatusResponse>> {
+    return this.request<IAuthStatusResponse>('/auth/status');
+  }
+
   // 获取积分余额
   async getCreditBalance(): Promise<IAPIResponse<ICreditBalance>> {
     return this.request<ICreditBalance>('/balance');
@@ -102,6 +134,8 @@ class APIClient {
     onError?: (error: Event) => void, 
     onOpen?: () => void,
     onResetStatusUpdate?: (resetUsed: boolean) => void,
+    onMonitoringStatusUpdate?: (status: IMonitoringStatus) => void,
+    onAuthExpired?: () => void,
     timeRange: number = 60
   ): EventSource {
     const eventSource = new EventSource(`${API_BASE}/usage/stream?minutes=${timeRange}`);
@@ -157,6 +191,30 @@ class APIClient {
         }
       } catch (error) {
         console.error('解析重置状态数据失败:', error, event.data);
+      }
+    });
+
+    eventSource.addEventListener('monitoring_status', (event) => {
+      try {
+        const statusData = JSON.parse(event.data);
+        console.debug('收到监控状态更新:', statusData);
+        if (onMonitoringStatusUpdate) {
+          onMonitoringStatusUpdate(statusData);
+        }
+      } catch (error) {
+        console.error('解析监控状态数据失败:', error, event.data);
+      }
+    });
+
+    eventSource.addEventListener('auth_expired', (event) => {
+      try {
+        const authData = JSON.parse(event.data);
+        console.warn('认证已过期:', authData.message);
+        if (onAuthExpired) {
+          onAuthExpired();
+        }
+      } catch (error) {
+        console.error('解析认证过期数据失败:', error, event.data);
       }
     });
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save, Settings, Trash2 } from 'lucide-react';
+import { Save, Settings, Trash2, Clock } from 'lucide-react';
 import type { IUserConfig, IUserConfigRequest } from '../types';
 import { apiClient } from '../api/client';
 
@@ -14,7 +14,26 @@ export function SettingsPanel({ className = '', onConfigUpdate }: SettingsPanelP
     interval: 1,
     timeRange: 60,
     enabled: false,
-    dailyResetUsed: false
+    dailyResetUsed: false,
+    autoSchedule: {
+      enabled: false,
+      startTime: '',
+      endTime: '',
+      monitoringOn: true
+    },
+    autoReset: {
+      enabled: false,
+      timeEnabled: false,
+      resetTime: '',
+      thresholdEnabled: false,
+      threshold: 0
+    },
+    version: {
+      version: 'Loading...',
+      gitCommit: 'Loading...',
+      buildTime: '',
+      goVersion: ''
+    }
   });
   const [cookieInput, setCookieInput] = useState<string>('');
   const [saving, setSaving] = useState(false);
@@ -47,7 +66,8 @@ export function SettingsPanel({ className = '', onConfigUpdate }: SettingsPanelP
       const requestConfig: IUserConfigRequest = {
         interval: config.interval,
         timeRange: config.timeRange,
-        enabled: config.enabled
+        enabled: config.enabled,
+        autoSchedule: config.autoSchedule
       };
       
       // 只有在输入了新的Cookie时才发送Cookie字段
@@ -186,6 +206,119 @@ export function SettingsPanel({ className = '', onConfigUpdate }: SettingsPanelP
             <option value={720}>12小时</option>
             <option value={1440}>24小时</option>
           </select>
+        </div>
+
+        {/* 自动调度配置 */}
+        <div className="pt-4 border-t border-gray-200">
+          <div className="flex items-center mb-4">
+            <Clock className="w-5 h-5 mr-2 text-gray-600" />
+            <h3 className="text-sm font-semibold text-gray-900">自动调度</h3>
+          </div>
+          
+          {/* 启用自动调度开关 */}
+          <div className="mb-4">
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={config.autoSchedule.enabled}
+                onChange={(e) => updateConfig('autoSchedule', { 
+                  ...config.autoSchedule, 
+                  enabled: e.target.checked 
+                })}
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500/20"
+              />
+              <span className="ml-2 text-sm text-gray-700">启用自动调度</span>
+            </label>
+            <p className="text-xs text-gray-500 mt-1 ml-6">
+              启用后监控开关将由系统自动控制，您无法手动操作
+            </p>
+          </div>
+
+          {/* 自动调度详细配置 */}
+          {config.autoSchedule.enabled && (
+            <div className="space-y-4 ml-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+              {/* 时间范围设置 */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    开始时间
+                  </label>
+                  <input
+                    type="time"
+                    value={config.autoSchedule.startTime}
+                    onChange={(e) => updateConfig('autoSchedule', { 
+                      ...config.autoSchedule, 
+                      startTime: e.target.value 
+                    })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    结束时间
+                  </label>
+                  <input
+                    type="time"
+                    value={config.autoSchedule.endTime}
+                    onChange={(e) => updateConfig('autoSchedule', { 
+                      ...config.autoSchedule, 
+                      endTime: e.target.value 
+                    })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* 监控状态设置 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  时间范围内的监控状态
+                </label>
+                <div className="space-y-2">
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="monitoringOn"
+                      checked={config.autoSchedule.monitoringOn === true}
+                      onChange={() => updateConfig('autoSchedule', { 
+                        ...config.autoSchedule, 
+                        monitoringOn: true 
+                      })}
+                      className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-2 focus:ring-blue-500/20"
+                    />
+                    <span className="ml-2 text-sm text-gray-700">时间范围内开启监控</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="monitoringOn"
+                      checked={config.autoSchedule.monitoringOn === false}
+                      onChange={() => updateConfig('autoSchedule', { 
+                        ...config.autoSchedule, 
+                        monitoringOn: false 
+                      })}
+                      className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-2 focus:ring-blue-500/20"
+                    />
+                    <span className="ml-2 text-sm text-gray-700">时间范围内关闭监控</span>
+                  </label>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  例如：设置22:00-06:00并选择"关闭监控"，则在晚10点到次日早6点期间自动关闭监控
+                </p>
+              </div>
+
+              {/* 当前状态预览 */}
+              {config.autoSchedule.startTime && config.autoSchedule.endTime && (
+                <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <p className="text-sm text-blue-800">
+                    <strong>配置预览：</strong>
+                    每日 {config.autoSchedule.startTime} - {config.autoSchedule.endTime} 
+                    {config.autoSchedule.monitoringOn ? '开启' : '关闭'}监控
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* 操作按钮 - 改进的响应式布局 */}

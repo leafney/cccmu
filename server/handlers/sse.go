@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/leafney/cccmu/server/auth"
 	"github.com/leafney/cccmu/server/database"
 	"github.com/leafney/cccmu/server/models"
 	"github.com/leafney/cccmu/server/services"
@@ -14,20 +16,45 @@ import (
 
 // SSEHandler SSE处理器
 type SSEHandler struct {
-	db        *database.BadgerDB
-	scheduler *services.SchedulerService
+	db          *database.BadgerDB
+	scheduler   *services.SchedulerService
+	authManager *auth.Manager
 }
 
 // NewSSEHandler 创建SSE处理器
-func NewSSEHandler(db *database.BadgerDB, scheduler *services.SchedulerService) *SSEHandler {
-	return &SSEHandler{
-		db:        db,
-		scheduler: scheduler,
+func NewSSEHandler(db *database.BadgerDB, scheduler *services.SchedulerService, authManager *auth.Manager) *SSEHandler {
+	handler := &SSEHandler{
+		db:          db,
+		scheduler:   scheduler,
+		authManager: authManager,
+	}
+	
+	// 注册会话事件监听器
+	authManager.AddSessionEventHandler(handler.handleSessionEvent)
+	
+	return handler
+}
+
+// handleSessionEvent 处理会话事件
+func (h *SSEHandler) handleSessionEvent(event auth.SessionEvent) {
+	// 这里可以实现更复杂的逻辑，比如通知特定的SSE连接
+	// 目前主要用于日志记录
+	switch event.Type {
+	case auth.SessionEventDeleted:
+		log.Printf("SSE: 会话被删除，相关连接将在下次心跳时断开: %s", event.SessionID[:8]+"...")
+	case auth.SessionEventExpired:
+		log.Printf("SSE: 会话已过期，相关连接将在下次心跳时断开: %s", event.SessionID[:8]+"...")
 	}
 }
 
 // StreamUsageData SSE数据流端点
 func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
+	// 验证认证状态（由于已经通过中间件，这里再次检查以确保安全）
+	sessionID := c.Cookies("cccmu_session")
+	if _, valid := h.authManager.ValidateSession(sessionID); !valid {
+		return c.Status(401).JSON(models.Error(401, "认证无效", nil))
+	}
+
 	// 设置SSE响应头
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
@@ -88,16 +115,32 @@ func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
 			}
 		}
 
+		// 立即发送当前监控状态和自动调度状态
+		statusData := map[string]any{
+			"type":                 "monitoring_status",
+			"isMonitoring":         h.scheduler.IsRunning(),
+			"autoScheduleEnabled":  h.scheduler.IsAutoScheduleEnabled(),
+			"autoScheduleActive":   h.scheduler.IsInAutoScheduleTimeRange(),
+			"timestamp":           time.Now().Format(time.RFC3339),
+		}
+		jsonData, err := json.Marshal(statusData)
+		if err == nil {
+			fmt.Fprintf(w, "event: monitoring_status\ndata: %s\n\n", jsonData)
+			w.Flush()
+		}
+
 		// 添加数据监听器
 		listener := h.scheduler.AddDataListener()
 		balanceListener := h.scheduler.AddBalanceListener()
 		errorListener := h.scheduler.AddErrorListener()
 		resetStatusListener := h.scheduler.AddResetStatusListener()
+		autoScheduleListener := h.scheduler.AddAutoScheduleListener()
 		defer func() {
 			h.scheduler.RemoveDataListener(listener)
 			h.scheduler.RemoveBalanceListener(balanceListener)
 			h.scheduler.RemoveErrorListener(errorListener)
 			h.scheduler.RemoveResetStatusListener(resetStatusListener)
+			h.scheduler.RemoveAutoScheduleListener(autoScheduleListener)
 		}()
 
 		// 设置连接保活
@@ -181,7 +224,41 @@ func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
 					return
 				}
 
+			case <-autoScheduleListener:
+				// 自动调度状态变化，发送完整的监控状态
+				statusData := map[string]any{
+					"type":                 "monitoring_status",
+					"isMonitoring":         h.scheduler.IsRunning(),
+					"autoScheduleEnabled":  h.scheduler.IsAutoScheduleEnabled(),
+					"autoScheduleActive":   h.scheduler.IsInAutoScheduleTimeRange(),
+					"timestamp":           time.Now().Format(time.RFC3339),
+				}
+				jsonData, err := json.Marshal(statusData)
+				if err != nil {
+					continue
+				}
+				fmt.Fprintf(w, "event: monitoring_status\ndata: %s\n\n", jsonData)
+				if err := w.Flush(); err != nil {
+					return
+				}
+
 			case <-ticker.C:
+				// 检查认证状态
+				if _, valid := h.authManager.ValidateSession(sessionID); !valid {
+					// 发送认证过期事件
+					authExpired := map[string]any{
+						"type":      "auth_expired",
+						"message":   "登录已过期",
+						"timestamp": time.Now().Format(time.RFC3339),
+					}
+					jsonData, err := json.Marshal(authExpired)
+					if err == nil {
+						fmt.Fprintf(w, "event: auth_expired\ndata: %s\n\n", jsonData)
+						w.Flush()
+					}
+					return // 关闭连接
+				}
+
 				// 发送心跳保活
 				heartbeat := map[string]any{
 					"type":      "heartbeat",

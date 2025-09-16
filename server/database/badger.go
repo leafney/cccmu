@@ -48,6 +48,7 @@ func (b *BadgerDB) SaveConfig(config *models.UserConfig) error {
 			"config:enabled":                  config.Enabled,
 			"config:lastcookievalidtime":      config.LastCookieValidTime,
 			"config:cookievalidationinterval": config.CookieValidationInterval,
+			"config:autoschedule":             config.AutoSchedule,
 		}
 
 		for key, value := range configs {

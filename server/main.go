@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -16,8 +18,10 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/spf13/pflag"
 
+	"github.com/leafney/cccmu/server/auth"
 	"github.com/leafney/cccmu/server/database"
 	"github.com/leafney/cccmu/server/handlers"
+	"github.com/leafney/cccmu/server/middleware"
 	"github.com/leafney/cccmu/server/services"
 	"github.com/leafney/cccmu/server/utils"
 	"github.com/leafney/cccmu/server/web"
@@ -36,10 +40,12 @@ func main() {
 	var port string
 	var enableLog bool
 	var showVersion bool
+	var sessionExpire string
 	
 	pflag.StringVarP(&port, "port", "p", "", "服务器端口号（例如: 8080 或 :8080）")
 	pflag.BoolVarP(&enableLog, "log", "l", false, "启用详细日志输出")
 	pflag.BoolVarP(&showVersion, "version", "v", false, "显示版本信息")
+	pflag.StringVarP(&sessionExpire, "expire", "e", "168", "Session过期时间（小时，如: 24, 168）")
 	pflag.Parse()
 
 	// 如果请求版本信息，显示并退出
@@ -54,6 +60,26 @@ func main() {
 	// 初始化日志系统
 	utils.InitLogger(enableLog)
 
+	// 解析会话过期时间（默认以小时为单位）
+	var expireDuration time.Duration
+	var err error
+	
+	// 如果包含时间单位，直接解析；否则当作小时处理
+	if strings.Contains(sessionExpire, "h") || strings.Contains(sessionExpire, "m") || strings.Contains(sessionExpire, "s") {
+		expireDuration, err = time.ParseDuration(sessionExpire)
+	} else {
+		// 默认按小时处理
+		expireDuration, err = time.ParseDuration(sessionExpire + "h")
+	}
+	
+	if err != nil {
+		log.Fatalf("解析Session过期时间失败: %v", err)
+	}
+
+	// 初始化认证管理器
+	authManager := auth.NewManager(expireDuration)
+	fmt.Printf("⏰ Session过期时间: %s\n", expireDuration)
+
 	// 初始化数据库
 	db, err := database.NewBadgerDB("./.b")
 	if err != nil {
@@ -67,6 +93,33 @@ func main() {
 		log.Fatalf("初始化调度服务失败: %v", err)
 	}
 	defer scheduler.Shutdown()
+
+	// 初始化自动重置服务
+	autoResetService := services.NewAutoResetService(db, scheduler)
+	if autoResetService == nil {
+		log.Fatalf("初始化自动重置服务失败")
+	}
+	defer func() {
+		if err := autoResetService.Stop(); err != nil {
+			log.Printf("停止自动重置服务失败: %v", err)
+		}
+	}()
+
+	// 启动自动重置服务
+	if err := autoResetService.Start(); err != nil {
+		log.Printf("启动自动重置服务失败: %v", err)
+	}
+
+	// 初始化异步配置更新服务
+	asyncConfigUpdater := services.NewAsyncConfigUpdater(scheduler, scheduler.GetAutoScheduler(), autoResetService, db)
+	if err := asyncConfigUpdater.Start(); err != nil {
+		log.Fatalf("启动异步配置更新服务失败: %v", err)
+	}
+	defer func() {
+		if err := asyncConfigUpdater.Stop(); err != nil {
+			log.Printf("停止异步配置更新服务失败: %v", err)
+		}
+	}()
 
 	// 初始化Fiber应用
 	app := fiber.New(fiber.Config{
@@ -92,12 +145,24 @@ func main() {
 	}))
 
 	// 初始化处理器
-	configHandler := handlers.NewConfigHandler(db, scheduler)
+	configHandler := handlers.NewConfigHandler(db, scheduler, autoResetService, asyncConfigUpdater)
 	controlHandler := handlers.NewControlHandler(scheduler, db)
-	sseHandler := handlers.NewSSEHandler(db, scheduler)
+	sseHandler := handlers.NewSSEHandler(db, scheduler, authManager)
+	authHandler := handlers.NewAuthHandler(authManager, scheduler, db)
 
 	// API路由
 	api := app.Group("/api")
+
+	// 认证相关API（不需要认证）
+	authGroup := api.Group("/auth")
+	{
+		authGroup.Post("/login", authHandler.Login)
+		authGroup.Get("/logout", authHandler.Logout)
+		authGroup.Get("/status", authHandler.Status)
+	}
+
+	// 需要认证的API路由
+	api.Use(middleware.AuthMiddleware(authManager))
 	{
 		// 配置相关
 		api.Get("/config", configHandler.GetConfig)
@@ -173,7 +238,7 @@ func main() {
 	// 启动服务器
 	serverPort := getPort(port)
 	log.Printf("服务器启动在端口 %s", serverPort)
-	log.Println("访问地址: http://localhost" + serverPort)
+	fmt.Printf("🌐 服务已启动: http://localhost%s\n", serverPort)
 
 	// 优雅关闭
 	go func() {
