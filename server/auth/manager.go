@@ -17,12 +17,32 @@ type Session struct {
 	ExpiresAt time.Time `json:"expiresAt"`
 }
 
+// SessionEventType 会话事件类型
+type SessionEventType int
+
+const (
+	SessionEventDeleted SessionEventType = iota
+	SessionEventExpired
+)
+
+// SessionEvent 会话事件
+type SessionEvent struct {
+	Type      SessionEventType
+	SessionID string
+	Timestamp time.Time
+}
+
+// SessionEventHandler 会话事件处理器
+type SessionEventHandler func(event SessionEvent)
+
 // Manager 认证管理器
 type Manager struct {
 	authKey       string
 	sessions      sync.Map
 	expireDuration time.Duration
 	authFilePath  string
+	eventHandlers []SessionEventHandler
+	eventMutex    sync.RWMutex
 }
 
 // NewManager 创建认证管理器
@@ -149,6 +169,11 @@ func (m *Manager) ValidateSession(sessionID string) (*Session, bool) {
 	if time.Now().After(session.ExpiresAt) {
 		m.sessions.Delete(sessionID)
 		log.Printf("会话已过期并清理: %s", sessionID[:8]+"...")
+		m.fireSessionEvent(SessionEvent{
+			Type:      SessionEventExpired,
+			SessionID: sessionID,
+			Timestamp: time.Now(),
+		})
 		return nil, false
 	}
 	
@@ -159,11 +184,35 @@ func (m *Manager) ValidateSession(sessionID string) (*Session, bool) {
 func (m *Manager) DeleteSession(sessionID string) {
 	m.sessions.Delete(sessionID)
 	log.Printf("删除会话: %s", sessionID[:8]+"...")
+	m.fireSessionEvent(SessionEvent{
+		Type:      SessionEventDeleted,
+		SessionID: sessionID,
+		Timestamp: time.Now(),
+	})
 }
 
 // GetExpireDuration 获取过期时间
 func (m *Manager) GetExpireDuration() time.Duration {
 	return m.expireDuration
+}
+
+// AddSessionEventHandler 添加会话事件处理器
+func (m *Manager) AddSessionEventHandler(handler SessionEventHandler) {
+	m.eventMutex.Lock()
+	defer m.eventMutex.Unlock()
+	m.eventHandlers = append(m.eventHandlers, handler)
+}
+
+// fireSessionEvent 触发会话事件
+func (m *Manager) fireSessionEvent(event SessionEvent) {
+	m.eventMutex.RLock()
+	handlers := make([]SessionEventHandler, len(m.eventHandlers))
+	copy(handlers, m.eventHandlers)
+	m.eventMutex.RUnlock()
+	
+	for _, handler := range handlers {
+		go handler(event) // 异步调用处理器，避免阻塞
+	}
 }
 
 // startSessionCleaner 启动会话清理器

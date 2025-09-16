@@ -148,7 +148,7 @@ func main() {
 	configHandler := handlers.NewConfigHandler(db, scheduler, autoResetService, asyncConfigUpdater)
 	controlHandler := handlers.NewControlHandler(scheduler, db)
 	sseHandler := handlers.NewSSEHandler(db, scheduler, authManager)
-	authHandler := handlers.NewAuthHandler(authManager)
+	authHandler := handlers.NewAuthHandler(authManager, scheduler, db)
 
 	// API路由
 	api := app.Group("/api")

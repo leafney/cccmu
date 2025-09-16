@@ -7,18 +7,24 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/leafney/cccmu/server/auth"
+	"github.com/leafney/cccmu/server/database"
 	"github.com/leafney/cccmu/server/models"
+	"github.com/leafney/cccmu/server/services"
 )
 
 // AuthHandler 认证处理器
 type AuthHandler struct {
 	authManager *auth.Manager
+	scheduler   *services.SchedulerService
+	db          *database.BadgerDB
 }
 
 // NewAuthHandler 创建认证处理器
-func NewAuthHandler(authManager *auth.Manager) *AuthHandler {
+func NewAuthHandler(authManager *auth.Manager, scheduler *services.SchedulerService, db *database.BadgerDB) *AuthHandler {
 	return &AuthHandler{
 		authManager: authManager,
+		scheduler:   scheduler,
+		db:          db,
 	}
 }
 
@@ -78,6 +84,21 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 
 	log.Printf("用户登录成功，会话: %s", session.ID[:8]+"...")
 
+	// 登录成功后检查配置并恢复监控状态
+	go func() {
+		time.Sleep(500 * time.Millisecond) // 短暂延迟确保前端连接就绪
+		config, err := h.db.GetConfig()
+		if err == nil && config.Enabled && config.Cookie != "" {
+			if !h.scheduler.IsRunning() {
+				if err := h.scheduler.Start(); err != nil {
+					log.Printf("登录后自动启动监控失败: %v", err)
+				} else {
+					log.Printf("登录成功，已自动恢复监控状态")
+				}
+			}
+		}
+	}()
+
 	response := LoginResponse{
 		Message:   "登录成功",
 		ExpiresAt: session.ExpiresAt,
@@ -93,6 +114,16 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 	if sessionID != "" {
 		// 删除会话
 		h.authManager.DeleteSession(sessionID)
+		log.Printf("会话已删除: %s", sessionID[:8]+"...")
+		
+		// 停止定时任务
+		if h.scheduler != nil && h.scheduler.IsRunning() {
+			if err := h.scheduler.Stop(); err != nil {
+				log.Printf("登出时停止定时任务失败: %v", err)
+			} else {
+				log.Printf("用户登出，已停止定时任务")
+			}
+		}
 	}
 
 	// 清除cookie

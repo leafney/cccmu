@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -22,10 +23,27 @@ type SSEHandler struct {
 
 // NewSSEHandler 创建SSE处理器
 func NewSSEHandler(db *database.BadgerDB, scheduler *services.SchedulerService, authManager *auth.Manager) *SSEHandler {
-	return &SSEHandler{
+	handler := &SSEHandler{
 		db:          db,
 		scheduler:   scheduler,
 		authManager: authManager,
+	}
+	
+	// 注册会话事件监听器
+	authManager.AddSessionEventHandler(handler.handleSessionEvent)
+	
+	return handler
+}
+
+// handleSessionEvent 处理会话事件
+func (h *SSEHandler) handleSessionEvent(event auth.SessionEvent) {
+	// 这里可以实现更复杂的逻辑，比如通知特定的SSE连接
+	// 目前主要用于日志记录
+	switch event.Type {
+	case auth.SessionEventDeleted:
+		log.Printf("SSE: 会话被删除，相关连接将在下次心跳时断开: %s", event.SessionID[:8]+"...")
+	case auth.SessionEventExpired:
+		log.Printf("SSE: 会话已过期，相关连接将在下次心跳时断开: %s", event.SessionID[:8]+"...")
 	}
 }
 

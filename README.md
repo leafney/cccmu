@@ -4,7 +4,7 @@
 
 ## 📸 项目截图
 
-![ACM Claude 积分监控系统界面](docs/image3.png)
+![ACM Claude 积分监控系统界面](docs/image4.png)
 
 *实时监控 ACM Claude 积分使用量，支持多时间范围查看和趋势分析*
 
