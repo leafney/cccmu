@@ -15,14 +15,14 @@ import (
 
 // AutoResetService 自动重置服务
 type AutoResetService struct {
-	scheduler      gocron.Scheduler      // 时间任务调度器
-	resetJob       gocron.Job            // 重置任务
-	config         *models.AutoResetConfig // 当前配置
-	db             *database.BadgerDB    // 数据库访问
-	schedulerSvc   *SchedulerService     // 调度器服务（用于通知和重置）
-	mu             sync.RWMutex          // 并发保护
-	tasksCreated   bool                  // 标记任务是否已创建
-	tasksRunning   bool                  // 标记任务是否正在运行
+	scheduler    gocron.Scheduler        // 时间任务调度器
+	resetJob     gocron.Job              // 重置任务
+	config       *models.AutoResetConfig // 当前配置
+	db           *database.BadgerDB      // 数据库访问
+	schedulerSvc *SchedulerService       // 调度器服务（用于通知和重置）
+	mu           sync.RWMutex            // 并发保护
+	tasksCreated bool                    // 标记任务是否已创建
+	tasksRunning bool                    // 标记任务是否正在运行
 }
 
 // NewAutoResetService 创建自动重置服务
@@ -32,10 +32,10 @@ func NewAutoResetService(db *database.BadgerDB, schedulerSvc *SchedulerService) 
 		log.Printf("[自动重置] 创建调度器失败: %v", err)
 		return nil
 	}
-	
+
 	return &AutoResetService{
 		scheduler:    scheduler,
-		db:          db,
+		db:           db,
 		schedulerSvc: schedulerSvc,
 		tasksCreated: false,
 		tasksRunning: false,
@@ -49,21 +49,21 @@ func (s *AutoResetService) UpdateConfig(config *models.AutoResetConfig) error {
 
 	oldConfig := s.config
 	s.config = config
-	
+
 	log.Printf("[自动重置] 配置更新:")
 	log.Printf("[自动重置] - 启用状态: %v", config.Enabled)
 	log.Printf("[自动重置] - 时间触发条件: %v", config.TimeEnabled)
 	if config.Enabled && config.TimeEnabled && config.ResetTime != "" {
 		log.Printf("[自动重置] - 重置时间: %s", config.ResetTime)
 	}
-	
+
 	// 判断启用状态是否变化
-	enabledChanged := (oldConfig == nil && config.Enabled) || 
-					  (oldConfig != nil && oldConfig.Enabled != config.Enabled)
-	
+	enabledChanged := (oldConfig == nil && config.Enabled) ||
+		(oldConfig != nil && oldConfig.Enabled != config.Enabled)
+
 	// 判断时间配置是否变化
 	timeConfigChanged := oldConfig != nil && (oldConfig.TimeEnabled != config.TimeEnabled || oldConfig.ResetTime != config.ResetTime)
-	
+
 	if timeConfigChanged {
 		// 时间配置变化：必须重建任务
 		log.Printf("[自动重置] 检测到时间配置变化，重建任务")
@@ -80,7 +80,7 @@ func (s *AutoResetService) UpdateConfig(config *models.AutoResetConfig) error {
 	} else {
 		log.Printf("[自动重置] 配置无实质性变化，保持当前状态")
 	}
-	
+
 	return nil
 }
 
@@ -88,23 +88,23 @@ func (s *AutoResetService) UpdateConfig(config *models.AutoResetConfig) error {
 func (s *AutoResetService) Start() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	// 从数据库加载配置
 	config, err := s.db.GetConfig()
 	if err != nil {
 		log.Printf("[自动重置] 加载配置失败: %v", err)
 		return err
 	}
-	
+
 	s.config = &config.AutoReset
-	
+
 	if s.config.Enabled {
 		log.Printf("[自动重置] 启动时自动重置已启用，开始初始化")
 		s.startTasks(s.config)
 	} else {
 		log.Printf("[自动重置] 启动时自动重置未启用")
 	}
-	
+
 	return nil
 }
 
@@ -112,15 +112,15 @@ func (s *AutoResetService) Start() error {
 func (s *AutoResetService) Stop() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	s.stopTasks()
-	
+
 	// 关闭调度器
 	if s.scheduler != nil {
 		log.Printf("[自动重置] 关闭调度器")
 		s.scheduler.Shutdown()
 	}
-	
+
 	return nil
 }
 
@@ -128,7 +128,7 @@ func (s *AutoResetService) Stop() error {
 func (s *AutoResetService) IsEnabled() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	return s.config != nil && s.config.Enabled
 }
 
@@ -136,7 +136,7 @@ func (s *AutoResetService) IsEnabled() bool {
 func (s *AutoResetService) GetConfig() *models.AutoResetConfig {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	if s.config == nil {
 		return &models.AutoResetConfig{}
 	}
@@ -181,16 +181,16 @@ func (s *AutoResetService) createTimeJob() error {
 	if s.config == nil || !s.config.TimeEnabled || s.config.ResetTime == "" {
 		return fmt.Errorf("时间触发条件未启用或重置时间未配置")
 	}
-	
+
 	log.Printf("[自动重置] 创建时间触发任务: %s", s.config.ResetTime)
-	
+
 	cronExpr, err := s.generateCronExpression(s.config.ResetTime)
 	if err != nil {
 		return fmt.Errorf("生成cron表达式失败: %w", err)
 	}
-	
+
 	log.Printf("[自动重置] Cron表达式: %s -> %s", s.config.ResetTime, cronExpr)
-	
+
 	job, err := s.scheduler.NewJob(
 		gocron.CronJob(cronExpr, false),
 		gocron.NewTask(s.handleTimeResetTask),
@@ -199,10 +199,10 @@ func (s *AutoResetService) createTimeJob() error {
 	if err != nil {
 		return fmt.Errorf("创建时间任务失败: %w", err)
 	}
-	
+
 	s.resetJob = job
 	s.tasksCreated = true
-	
+
 	log.Printf("[自动重置] ✅ 时间触发任务创建成功, ID: %v", job.ID())
 	return nil
 }
@@ -213,7 +213,7 @@ func (s *AutoResetService) removeTimeJob() {
 		log.Printf("[自动重置] 无任务需要删除")
 		return
 	}
-	
+
 	if s.resetJob != nil {
 		log.Printf("[自动重置] 删除时间任务 (ID: %v)", s.resetJob.ID())
 		if err := s.scheduler.RemoveJob(s.resetJob.ID()); err != nil {
@@ -223,7 +223,7 @@ func (s *AutoResetService) removeTimeJob() {
 		}
 		s.resetJob = nil
 	}
-	
+
 	s.tasksCreated = false
 }
 
@@ -241,7 +241,7 @@ func (s *AutoResetService) startTasksInternal() error {
 	log.Printf("[自动重置] 启动调度器...")
 	s.scheduler.Start()
 	s.tasksRunning = true
-	
+
 	log.Printf("[自动重置] ✅ 定时任务启动完成")
 	return nil
 }
@@ -256,7 +256,7 @@ func (s *AutoResetService) stopTasksInternal() {
 	log.Printf("[自动重置] 停止调度器...")
 	s.scheduler.StopJobs()
 	s.tasksRunning = false
-	
+
 	log.Printf("[自动重置] ✅ 定时任务停止完成")
 }
 
@@ -267,25 +267,25 @@ func (s *AutoResetService) handleTimeResetTask() {
 		log.Printf("[自动重置] ⚠️  时间任务触发但服务正在关闭，跳过执行")
 		return
 	}
-	
+
 	now := time.Now()
 	log.Printf("[自动重置] 🚀 时间触发任务执行!")
 	log.Printf("[自动重置]   ⏰ 触发时间: %s", now.Format("2006-01-02 15:04:05"))
 	log.Printf("[自动重置]   📋 配置时间: %s", s.config.ResetTime)
-	
+
 	s.executeAutoReset("time_trigger")
 }
 
 // executeAutoReset 执行自动重置
 func (s *AutoResetService) executeAutoReset(trigger string) {
 	log.Printf("[自动重置] 开始执行自动重置，触发原因: %s", trigger)
-	
+
 	// 检查是否已重置
 	if s.isAlreadyReset() {
 		log.Printf("[自动重置] 今日已重置过，跳过执行")
 		return
 	}
-	
+
 	// 调用现有的重置积分API
 	success := s.callExistingResetAPI()
 	if success {
@@ -313,17 +313,13 @@ func (s *AutoResetService) callExistingResetAPI() bool {
 	// 通过调度器服务的重置功能来执行重置
 	// 自动重置功能独立于监控功能，不需要检查监控状态
 	// 这会复用现有的重置逻辑，包括API调用、状态更新和SSE通知
-	
-	// TODO: 测试期间屏蔽真实重置调用，使用日志输出代替
-	log.Printf("[自动重置] 🔧 测试模式: 模拟执行重置操作 (未调用真实API)")
-	log.Printf("[自动重置] 🔧 测试模式: 如果是生产环境，此处会调用 s.schedulerSvc.ResetCreditsManually()")
-	
-	// 生产环境代码 (已屏蔽):
-	// err = s.schedulerSvc.ResetCreditsManually()
-	// if err != nil {
-	// 	log.Printf("[自动重置] 调用重置API失败: %v", err)
-	// 	return false
-	// }
+
+	// 调用真实的重置API
+	err = s.schedulerSvc.ResetCreditsManually()
+	if err != nil {
+		log.Printf("[自动重置] 调用重置API失败: %v", err)
+		return false
+	}
 
 	return true
 }
@@ -332,18 +328,18 @@ func (s *AutoResetService) callExistingResetAPI() bool {
 func (s *AutoResetService) rebuildTasks(config *models.AutoResetConfig) {
 	log.Printf("[自动重置] 🔄 开始重建任务 (时间配置变化)")
 	log.Printf("[自动重置]   📋 新配置: %s", config.ResetTime)
-	
+
 	// 删除旧任务
 	log.Printf("[自动重置]   🗑️  删除旧任务...")
 	s.removeTimeJob()
-	
+
 	// 创建新任务
 	log.Printf("[自动重置]   🔨 创建新任务...")
 	if err := s.createTimeJob(); err != nil {
 		log.Printf("[自动重置]   ❌ 创建新任务失败: %v", err)
 		return
 	}
-	
+
 	// 根据启用状态决定是否启动
 	if config.Enabled {
 		log.Printf("[自动重置]   🚀 启动新任务...")
@@ -360,7 +356,7 @@ func (s *AutoResetService) rebuildTasks(config *models.AutoResetConfig) {
 // startTasks 启动任务（启用状态变化时使用）
 func (s *AutoResetService) startTasks(_ *models.AutoResetConfig) {
 	log.Printf("[自动重置] 🟢 启动自动重置任务")
-	
+
 	if !s.tasksCreated {
 		log.Printf("[自动重置]   🔨 首次启用: 需要创建任务")
 		if s.config != nil && s.config.TimeEnabled {
@@ -376,21 +372,21 @@ func (s *AutoResetService) startTasks(_ *models.AutoResetConfig) {
 	} else {
 		log.Printf("[自动重置]   ♻️  复用现有任务 (任务已创建)")
 	}
-	
+
 	// 启动任务
 	log.Printf("[自动重置]   🚀 启动任务...")
 	if err := s.startTasksInternal(); err != nil {
 		log.Printf("[自动重置]   ❌ 启动任务失败: %v", err)
 		return
 	}
-	
+
 	log.Printf("[自动重置] ✅ 自动重置启动完成")
 }
 
 // stopTasks 停止任务（禁用状态变化时使用）
 func (s *AutoResetService) stopTasks() {
 	log.Printf("[自动重置] 🔴 停止自动重置任务")
-	
+
 	if s.tasksRunning {
 		log.Printf("[自动重置]   ⏹️  停止运行中的任务...")
 		s.stopTasksInternal()

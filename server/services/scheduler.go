@@ -125,8 +125,8 @@ func (s *SchedulerService) Start() error {
 
 	// 验证Cookie（通过获取积分余额隐式验证）
 	s.apiClient.UpdateCookie(s.config.Cookie)
-	if _, err := s.apiClient.FetchCreditBalance(); err != nil {
-		return fmt.Errorf("Cookie验证失败: %w", err)
+	if _, cookieErr := s.apiClient.FetchCreditBalance(); cookieErr != nil {
+		return fmt.Errorf("cookie验证失败: %w", cookieErr)
 	}
 
 	// 添加使用数据定时任务
@@ -392,7 +392,7 @@ func (s *SchedulerService) startWithoutLock() error {
 
 	// 验证Cookie（通过获取积分余额隐式验证）
 	if _, err := s.apiClient.FetchCreditBalance(); err != nil {
-		return fmt.Errorf("Cookie验证失败: %w", err)
+		return fmt.Errorf("cookie验证失败: %w", err)
 	}
 
 	// 创建新的调度器，确保任务配置是最新的
