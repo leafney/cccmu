@@ -17,6 +17,13 @@ var (
 	BuildTime = "unknown"
 )
 
+// SetVersionInfo 设置版本信息（从main函数调用）
+func SetVersionInfo(version, gitCommit, buildTime string) {
+	Version = version
+	GitCommit = gitCommit
+	BuildTime = buildTime
+}
+
 // ConfigHandler 配置处理器
 type ConfigHandler struct {
 	db              *database.BadgerDB

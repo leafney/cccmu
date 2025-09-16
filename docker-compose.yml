@@ -4,6 +4,16 @@ services:
     container_name: cccmu
     ports:
       - "8080:8080"
-    volumes:
-      - ./.auth:/app/.auth
     restart: unless-stopped
+    volumes:
+      # 数据持久化目录映射
+      - ./data:/app/.b
+    environment:
+      # 服务器端口配置
+      - PORT=8080
+      # 启用详细日志输出（开发调试时建议启用）
+      - LOG_ENABLED=false
+      # Session过期时间（7天 = 168小时）
+      - SESSION_EXPIRE=168h
+      # 可选：使用纯数字形式（按小时计算）
+      # - SESSION_EXPIRE=168
