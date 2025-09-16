@@ -74,15 +74,16 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate, isMonitoring = 
   // 同步isMonitoring状态到本地配置
   useEffect(() => {
     if (isOpen && config) {
-      // 确保config.enabled与实际的isMonitoring状态一致
-      if (config.enabled !== isMonitoring) {
+      // 只有在没有启用自动调度的情况下，才同步config.enabled与isMonitoring状态
+      // 如果启用了自动调度，监控状态由系统自动控制，不需要同步config.enabled
+      if (!config.autoSchedule?.enabled && config.enabled !== isMonitoring) {
         setConfig(prev => ({
           ...prev,
           enabled: isMonitoring
         }));
       }
     }
-  }, [isOpen, isMonitoring, config?.enabled]);
+  }, [isOpen, isMonitoring, config?.enabled, config?.autoSchedule?.enabled]);
 
   const loadConfig = async () => {
     try {
@@ -674,12 +675,11 @@ function AutoScheduleTab({
             </span>
             <button
               type="button"
-              disabled={!isMonitoring}
               onClick={() => updateConfig('autoSchedule', { 
                 ...config.autoSchedule, 
                 enabled: !config.autoSchedule.enabled 
               })}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed ${
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
                 config.autoSchedule.enabled ? 'bg-blue-600' : 'bg-gray-300'
               }`}
             >
@@ -691,9 +691,9 @@ function AutoScheduleTab({
             </button>
           </div>
           <p className="text-xs text-gray-500 mt-2">
-            {!isMonitoring
-              ? '请先开启监控开关才能使用此功能' 
-              : '启用后监控开关将由系统自动控制，您无法手动操作'
+            {config.autoSchedule.enabled
+              ? '自动调度已启用，监控开关现在由系统根据时间配置自动控制'
+              : '启用后监控开关将由系统根据时间配置自动控制'
             }
           </p>
         </div>
