@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -35,6 +36,34 @@ var (
 	GoVersion = runtime.Version()
 )
 
+// getBoolFromEnv 从环境变量获取布尔值，支持多种格式
+func getBoolFromEnv(key string, defaultValue bool) bool {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	
+	// 支持多种格式：true/false, yes/no, 1/0, on/off
+	value = strings.ToLower(strings.TrimSpace(value))
+	switch value {
+	case "true", "yes", "1", "on", "enable", "enabled":
+		return true
+	case "false", "no", "0", "off", "disable", "disabled":
+		return false
+	default:
+		log.Printf("警告: 无效的布尔值环境变量 %s=%s，使用默认值 %v", key, value, defaultValue)
+		return defaultValue
+	}
+}
+
+// getStringFromEnv 从环境变量获取字符串值
+func getStringFromEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
 func main() {
 	// 解析命令行参数
 	var port string
@@ -45,8 +74,20 @@ func main() {
 	pflag.StringVarP(&port, "port", "p", "", "服务器端口号（例如: 8080 或 :8080）")
 	pflag.BoolVarP(&enableLog, "log", "l", false, "启用详细日志输出")
 	pflag.BoolVarP(&showVersion, "version", "v", false, "显示版本信息")
-	pflag.StringVarP(&sessionExpire, "expire", "e", "168", "Session过期时间（小时，如: 24, 168）")
+	pflag.StringVarP(&sessionExpire, "expire", "e", "", "Session过期时间（小时，如: 24, 168）")
 	pflag.Parse()
+	
+	// 应用环境变量配置（优先级：命令行参数 > 环境变量 > 默认值）
+	
+	// 如果命令行没有设置日志开关，则检查环境变量
+	if !pflag.Lookup("log").Changed {
+		enableLog = getBoolFromEnv("LOG_ENABLED", false)
+	}
+	
+	// 如果命令行没有设置Session过期时间，则检查环境变量
+	if !pflag.Lookup("expire").Changed {
+		sessionExpire = getStringFromEnv("SESSION_EXPIRE", "168")
+	}
 
 	// 如果请求版本信息，显示并退出
 	if showVersion {

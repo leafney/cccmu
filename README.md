@@ -121,15 +121,44 @@ cccmu/
 # 拉取最新镜像
 docker pull ghcr.io/leafney/cccmu:latest
 
-# 运行容器
+# 运行容器（基础方式）
 docker run -d \
   --name cccmu \
   -p 8080:8080 \
   -v $(pwd)/data:/app/.b \
   ghcr.io/leafney/cccmu:latest
 
-# 或使用 Docker Compose
+# 运行容器（使用环境变量配置）
+docker run -d \
+  --name cccmu \
+  -p 9090:9090 \
+  -e PORT=9090 \
+  -e LOG_ENABLED=true \
+  -e SESSION_EXPIRE=48h \
+  -v $(pwd)/data:/app/.b \
+  ghcr.io/leafney/cccmu:latest
+
+# 或使用 Docker Compose（推荐）
 docker-compose up -d
+```
+
+**Docker Compose 环境变量配置**：
+
+```yaml
+# docker-compose.yml
+services:
+  cccmu:
+    image: ghcr.io/leafney/cccmu:latest
+    container_name: cccmu
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/.b
+    environment:
+      - PORT=8080
+      - LOG_ENABLED=false        # 生产环境建议关闭
+      - SESSION_EXPIRE=168h      # 7天过期时间
 ```
 
 访问 http://localhost:8080 开始使用。
@@ -250,28 +279,40 @@ make build
 - **应用范围**：控制用户身份认证的会话有效期，到期后需重新登录
 - **安全考虑**：较短的过期时间提高安全性，较长的过期时间提高使用便利性
 
-#### 端口配置方式
+#### 参数配置方式
 
-支持多种端口配置方式，按优先级排序：
-
+**配置优先级**（按优先级从高到低排序）：
 1. **命令行参数**（最高优先级）
-   ```bash
-   ./cccmu -port 9090
-   ./cccmu -port :3000
-   ```
+2. **环境变量**（中等优先级）  
+3. **默认值**（最低优先级）
 
-2. **环境变量**
-   ```bash
-   PORT=9090 ./cccmu
-   export PORT=3000 && ./cccmu
-   ```
+**支持的环境变量**：
 
-3. **默认端口**：`:8080`（如果未配置其他方式）
+| 环境变量 | 对应命令行参数 | 描述 | 示例值 |
+|----------|---------------|------|---------|
+| `PORT` | `--port/-p` | 服务器端口号 | `8080`, `:3000` |
+| `LOG_ENABLED` | `--log/-l` | 启用详细日志输出 | `true`, `false`, `yes`, `no`, `1`, `0` |
+| `SESSION_EXPIRE` | `--expire/-e` | Session过期时间 | `168h`, `24`, `48h`, `30m` |
 
-命令行参数会覆盖环境变量设置：
+**配置示例**：
+
 ```bash
-# 最终使用端口 9090（命令行参数优先）
-PORT=8080 ./cccmu -p 9090
+# 方式1：使用命令行参数
+./cccmu -p 9090 -l -e 24
+
+# 方式2：使用环境变量
+export PORT=9090
+export LOG_ENABLED=true
+export SESSION_EXPIRE=24h
+./cccmu
+
+# 方式3：混合使用（命令行参数优先）
+export PORT=8080
+export LOG_ENABLED=false
+./cccmu -p 9090 -l  # 最终: 端口9090, 日志开启, 过期时间使用默认值
+
+# 方式4：一次性设置环境变量
+PORT=9090 LOG_ENABLED=true SESSION_EXPIRE=48h ./cccmu
 ```
 
 #### 版本信息显示
