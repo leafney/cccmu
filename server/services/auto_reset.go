@@ -451,30 +451,39 @@ func (s *AutoResetService) startThresholdTask() error {
 	return nil
 }
 
-// stopThresholdTask 停止阈值检查任务
+// stopThresholdTask 停止阈值检查任务（采用彻底清理策略）
 func (s *AutoResetService) stopThresholdTask() {
-	utils.Logf("[阈值触发] 🔴 停止阈值检查任务")
+	utils.Logf("[阈值触发] 🔴 停止阈值检查任务 (彻底清理所有相关任务)")
 	
 	if s.thresholdRunning {
-		// 停用阈值检查
+		// 停用阈值检查任务
 		if s.thresholdActive {
-			s.deactivateThresholdCheck()
+			s.removeThresholdCheckTask()
 		}
 		
-		// 清理时间范围管理任务
-		if s.thresholdTimerJob != nil {
-			if err := s.thresholdScheduler.RemoveJob(s.thresholdTimerJob.ID()); err != nil {
-				utils.Logf("[阈值触发] ❌ 移除时间范围管理任务失败: %v", err)
-			} else {
-				utils.Logf("[阈值触发] ✅ 时间范围管理任务已移除")
-			}
-			s.thresholdTimerJob = nil
-		}
-		
+		// 完全停止并关闭调度器，确保所有任务都被清理
+		utils.Logf("[阈值触发] 🗑️  完全清理阈值调度器")
 		s.thresholdScheduler.StopJobs()
+		if err := s.thresholdScheduler.Shutdown(); err != nil {
+			utils.Logf("[阈值触发] ❌ 关闭阈值调度器失败: %v", err)
+		}
+		
+		// 重新创建调度器以确保完全清理
+		newScheduler, err := gocron.NewScheduler()
+		if err != nil {
+			utils.Logf("[阈值触发] ❌ 重新创建阈值调度器失败: %v", err)
+		} else {
+			s.thresholdScheduler = newScheduler
+			utils.Logf("[阈值触发] ✅ 阈值调度器已重新创建")
+		}
+		
+		// 清理所有任务引用
+		s.thresholdJob = nil
+		s.thresholdTimerJob = nil
 		s.thresholdRunning = false
 		s.thresholdActive = false
-		utils.Logf("[阈值触发]   ⏹️  阈值检查任务已停止")
+		
+		utils.Logf("[阈值触发] ⏹️  阈值检查任务已完全停止")
 	}
 	
 	utils.Logf("[阈值触发] ✅ 阈值检查任务已停止")
@@ -516,6 +525,12 @@ func (s *AutoResetService) startTimeRangeManager() error {
 
 // manageTimeRange 管理时间范围，动态启动和停止阈值检查
 func (s *AutoResetService) manageTimeRange() {
+	// 检查阈值任务是否仍在运行，如果已停用则直接返回
+	if !s.thresholdRunning {
+		utils.Logf("[阈值触发] ⚠️  阈值任务已停用，跳过时间范围检查")
+		return
+	}
+	
 	now := time.Now()
 	inRange := s.config.IsInThresholdTimeRange(now)
 	
@@ -573,8 +588,8 @@ func (s *AutoResetService) activateThresholdCheck() error {
 	return nil
 }
 
-// deactivateThresholdCheck 停用阈值检查任务
-func (s *AutoResetService) deactivateThresholdCheck() {
+// removeThresholdCheckTask 移除阈值检查任务（内部方法）
+func (s *AutoResetService) removeThresholdCheckTask() {
 	if !s.thresholdActive {
 		utils.Logf("[阈值触发] ⚠️  阈值检查已经停用，跳过")
 		return
@@ -592,12 +607,27 @@ func (s *AutoResetService) deactivateThresholdCheck() {
 		s.thresholdJob = nil
 	}
 	
-	// 停用阈值检查时恢复SchedulerService积分获取任务
+	// 移除时间范围管理任务
+	if s.thresholdTimerJob != nil {
+		if err := s.thresholdScheduler.RemoveJob(s.thresholdTimerJob.ID()); err != nil {
+			utils.Logf("[阈值触发] ❌ 移除时间范围管理任务失败: %v", err)
+		} else {
+			utils.Logf("[阈值触发] ✅ 时间范围管理任务已移除")
+		}
+		s.thresholdTimerJob = nil
+	}
+	
+	// 恢复SchedulerService积分获取任务（采用重建策略）
 	utils.Logf("[阈值触发] ▶️  恢复SchedulerService积分获取任务 (阈值检查已结束)")
-	s.schedulerSvc.ResumeBalanceTask()
+	s.schedulerSvc.RebuildBalanceTask()
 	
 	s.thresholdActive = false
 	utils.Logf("[阈值触发] ⏹️  阈值检查任务已停用")
+}
+
+// deactivateThresholdCheck 停用阈值检查任务（保持兼容性）
+func (s *AutoResetService) deactivateThresholdCheck() {
+	s.removeThresholdCheckTask()
 }
 
 // executeAutoReset 执行自动重置
