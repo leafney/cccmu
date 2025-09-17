@@ -553,11 +553,11 @@ export function Dashboard() {
               <span className="text-xs text-white/80 hidden md:block">重置</span>
               <button
                 onClick={toggleAutoReset}
-                disabled={!isConnected}
+                disabled={!config?.cookie || !isConnected}
                 className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50 ${
                   isAutoResetEnabled ? 'bg-purple-500' : 'bg-gray-600'
                 }`}
-                title={!isConnected ? "请等待连接建立" : "切换自动重置状态"}
+                title={!config?.cookie ? "请先配置Cookie" : !isConnected ? "请等待连接建立" : "切换自动重置状态"}
               >
                 <span
                   className={`inline-block h-3 w-3 transform rounded-full bg-white transition ${
