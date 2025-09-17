@@ -88,6 +88,7 @@ func (h *ConfigHandler) UpdateConfig(c *fiber.Ctx) error {
 		CookieValidationInterval: currentConfig.CookieValidationInterval,
 		DailyResetUsed:          currentConfig.DailyResetUsed,
 		AutoSchedule:            currentConfig.AutoSchedule, // 默认保持原有自动调度配置
+		AutoReset:               currentConfig.AutoReset,    // 默认保持原有自动重置配置
 	}
 
 	// 如果请求中包含新的Cookie，则更新（使用指针判断是否设置了Cookie字段）

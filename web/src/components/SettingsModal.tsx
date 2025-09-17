@@ -49,7 +49,10 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate, isMonitoring = 
       timeEnabled: false,
       resetTime: '',
       thresholdEnabled: false,
-      threshold: 0
+      threshold: 0,
+      thresholdTimeEnabled: false,
+      thresholdStartTime: '',
+      thresholdEndTime: ''
     },
     version: {
       version: 'Loading...',
@@ -74,15 +77,16 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate, isMonitoring = 
   // 同步isMonitoring状态到本地配置
   useEffect(() => {
     if (isOpen && config) {
-      // 确保config.enabled与实际的isMonitoring状态一致
-      if (config.enabled !== isMonitoring) {
+      // 只有在没有启用自动调度的情况下，才同步config.enabled与isMonitoring状态
+      // 如果启用了自动调度，监控状态由系统自动控制，不需要同步config.enabled
+      if (!config.autoSchedule?.enabled && config.enabled !== isMonitoring) {
         setConfig(prev => ({
           ...prev,
           enabled: isMonitoring
         }));
       }
     }
-  }, [isOpen, isMonitoring, config?.enabled]);
+  }, [isOpen, isMonitoring, config?.enabled, config?.autoSchedule?.enabled]);
 
   const loadConfig = async () => {
     try {
@@ -674,12 +678,11 @@ function AutoScheduleTab({
             </span>
             <button
               type="button"
-              disabled={!isMonitoring}
               onClick={() => updateConfig('autoSchedule', { 
                 ...config.autoSchedule, 
                 enabled: !config.autoSchedule.enabled 
               })}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed ${
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
                 config.autoSchedule.enabled ? 'bg-blue-600' : 'bg-gray-300'
               }`}
             >
@@ -691,9 +694,9 @@ function AutoScheduleTab({
             </button>
           </div>
           <p className="text-xs text-gray-500 mt-2">
-            {!isMonitoring
-              ? '请先开启监控开关才能使用此功能' 
-              : '启用后监控开关将由系统自动控制，您无法手动操作'
+            {config.autoSchedule.enabled
+              ? '自动调度已启用，监控开关现在由系统根据时间配置自动控制'
+              : '启用后监控开关将由系统根据时间配置自动控制'
             }
           </p>
         </div>
@@ -935,15 +938,31 @@ function AutoResetTab({
               </p>
             </div>
 
-            {/* 当前配置预览 */}
-            {config.autoReset.timeEnabled && config.autoReset.resetTime && (
+            {/* 配置预览 - 显示所有启用的触发条件 */}
+            {config.autoReset.enabled && (config.autoReset.timeEnabled || config.autoReset.thresholdEnabled) && (
               <div className="mt-3 p-3 bg-purple-100 rounded-lg border border-purple-200">
-                <p className="text-sm text-purple-800">
-                  <strong>配置预览：</strong>
-                  每日 {config.autoReset.resetTime} 自动重置积分
+                <p className="text-sm text-purple-800 font-medium mb-2">
+                  <strong>配置预览：</strong>自动重置将在以下条件下触发（满足任一条件即执行）
                 </p>
-                <p className="text-xs text-purple-600 mt-1">
-                  * 如当日已手动重置过，将跳过自动重置
+                <div className="space-y-1">
+                  {config.autoReset.timeEnabled && config.autoReset.resetTime && (
+                    <div className="flex items-center text-xs text-purple-700">
+                      <span className="inline-block w-1.5 h-1.5 bg-purple-500 rounded-full mr-2"></span>
+                      <strong>时间触发：</strong>每日 {config.autoReset.resetTime} 自动重置积分
+                    </div>
+                  )}
+                  {config.autoReset.thresholdEnabled && config.autoReset.threshold > 0 && (
+                    <div className="flex items-center text-xs text-purple-700">
+                      <span className="inline-block w-1.5 h-1.5 bg-purple-500 rounded-full mr-2"></span>
+                      <strong>阈值触发：</strong>当积分余额低于 {config.autoReset.threshold} 时自动重置
+                      {config.autoReset.thresholdTimeEnabled && config.autoReset.thresholdStartTime && config.autoReset.thresholdEndTime && (
+                        <span className="ml-1">（仅在 {config.autoReset.thresholdStartTime}-{config.autoReset.thresholdEndTime} 检查）</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-purple-600 mt-2 pt-1 border-t border-purple-200">
+                  * 无论哪种条件触发，每天最多只会自动重置一次
                 </p>
               </div>
             )}
@@ -958,28 +977,112 @@ function AutoResetTab({
               </div>
             )}
 
-            {/* 预留区域：积分阈值触发（暂时禁用） */}
-            <div className="opacity-50 pointer-events-none">
+            {/* 积分阈值触发 */}
+            <div className={config.autoReset.enabled ? '' : 'opacity-50 pointer-events-none'}>
+              {/* 启用阈值触发开关 */}
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-medium text-gray-700">
-                  积分低于阈值时触发（开发中）
+                  积分低于阈值时触发
                 </span>
                 <button
                   type="button"
-                  disabled={true}
-                  className="relative inline-flex h-5 w-9 items-center rounded-full bg-gray-300 transition-all duration-200"
+                  onClick={() => updateConfig('autoReset', { 
+                    ...config.autoReset, 
+                    thresholdEnabled: !config.autoReset.thresholdEnabled 
+                  })}
+                  disabled={!config.autoReset.enabled}
+                  className={`relative inline-flex h-4 w-7 items-center rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500/20 ${
+                    config.autoReset.thresholdEnabled ? 'bg-purple-600' : 'bg-gray-300'
+                  }`}
                 >
-                  <span className="inline-block h-3 w-3 transform rounded-full bg-white transition duration-200 translate-x-1" />
+                  <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition duration-200 ${
+                    config.autoReset.thresholdEnabled ? 'translate-x-3.5' : 'translate-x-0.5'
+                  }`} />
                 </button>
               </div>
+              
+              {/* 阈值设置 */}
               <input
                 type="number"
                 placeholder="积分阈值"
-                disabled={true}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-100"
+                value={config.autoReset.threshold || ''}
+                disabled={!config.autoReset.thresholdEnabled}
+                onChange={(e) => updateConfig('autoReset', { 
+                  ...config.autoReset, 
+                  threshold: parseInt(e.target.value) || 0 
+                })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-50 mb-3"
+                min="0"
+                max="10000"
               />
-              <p className="text-xs text-gray-400 mt-1">
-                此功能将在后续版本中提供
+              
+              {/* 时间范围设置 */}
+              {config.autoReset.thresholdEnabled && (
+                <div className="mt-3 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-gray-700">
+                      限制检查时间范围
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => updateConfig('autoReset', { 
+                        ...config.autoReset, 
+                        thresholdTimeEnabled: !config.autoReset.thresholdTimeEnabled 
+                      })}
+                      className={`relative inline-flex h-4 w-7 items-center rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500/20 ${
+                        config.autoReset.thresholdTimeEnabled ? 'bg-purple-600' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition duration-200 ${
+                        config.autoReset.thresholdTimeEnabled ? 'translate-x-3.5' : 'translate-x-0.5'
+                      }`} />
+                    </button>
+                  </div>
+                  
+                  {config.autoReset.thresholdTimeEnabled && (
+                    <div className="grid grid-cols-2 gap-3 mt-2">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          开始时间
+                        </label>
+                        <input
+                          type="time"
+                          value={config.autoReset.thresholdStartTime}
+                          onChange={(e) => updateConfig('autoReset', { 
+                            ...config.autoReset, 
+                            thresholdStartTime: e.target.value 
+                          })}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-purple-500/20 focus:border-purple-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          结束时间
+                        </label>
+                        <input
+                          type="time"
+                          value={config.autoReset.thresholdEndTime}
+                          onChange={(e) => updateConfig('autoReset', { 
+                            ...config.autoReset, 
+                            thresholdEndTime: e.target.value 
+                          })}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-purple-500/20 focus:border-purple-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+                  
+                  <p className="text-xs text-gray-500 mt-2">
+                    {config.autoReset.thresholdTimeEnabled && config.autoReset.thresholdStartTime && config.autoReset.thresholdEndTime
+                      ? `仅在 ${config.autoReset.thresholdStartTime} - ${config.autoReset.thresholdEndTime} 期间检查积分阈值`
+                      : '启用后可限制阈值检查的时间范围，避免在不需要的时间段进行检查'
+                    }
+                  </p>
+                </div>
+              )}
+              
+              <p className="text-xs text-gray-500 mt-2">
+                当积分余额低于设定阈值时自动执行重置操作（每天最多一次）
               </p>
             </div>
           </div>
@@ -1082,6 +1185,15 @@ function StatusInfoTab({
             <div className="flex items-center justify-between p-3 bg-purple-50 rounded-lg">
               <span className="text-sm text-purple-700">自动重置时间</span>
               <span className="text-sm text-purple-900">{config.autoReset.resetTime}</span>
+            </div>
+          )}
+          
+          {config.autoReset?.enabled && config.autoReset?.thresholdEnabled && config.autoReset?.thresholdTimeEnabled && (
+            <div className="flex items-center justify-between p-3 bg-orange-50 rounded-lg">
+              <span className="text-sm text-orange-700">阈值检查时间</span>
+              <span className="text-sm text-orange-900">
+                {config.autoReset.thresholdStartTime} - {config.autoReset.thresholdEndTime}
+              </span>
             </div>
           )}
         </div>
