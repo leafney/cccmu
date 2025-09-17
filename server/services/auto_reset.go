@@ -371,17 +371,10 @@ func (s *AutoResetService) handleThresholdCheckTask() {
 		return
 	}
 	
-	// 临时暂停SchedulerService的积分获取任务（避免重复API调用）
-	utils.Logf("[阈值触发]   ⏸️  临时暂停SchedulerService积分获取任务")
-	s.schedulerSvc.PauseBalanceTask()
-	
 	// 获取积分余额（使用现有缓存逻辑）
 	balance, err := s.apiClient.FetchCreditBalance()
 	if err != nil {
 		utils.Logf("[阈值触发]   ❌ 获取积分余额失败: %v", err)
-		// 发生错误时恢复SchedulerService积分获取任务
-		utils.Logf("[阈值触发]   ▶️  恢复SchedulerService积分获取任务")
-		s.schedulerSvc.ResumeBalanceTask()
 		return
 	}
 	
@@ -391,10 +384,6 @@ func (s *AutoResetService) handleThresholdCheckTask() {
 	// 通过SchedulerService推送积分到前端（SSE）
 	s.schedulerSvc.NotifyBalanceUpdate(balance)
 	utils.Logf("[阈值触发]   📡 已推送积分余额到前端")
-	
-	// 立即恢复SchedulerService积分获取任务
-	utils.Logf("[阈值触发]   ▶️  恢复SchedulerService积分获取任务")
-	s.schedulerSvc.ResumeBalanceTask()
 	
 	// 判断是否低于阈值
 	if balance.Remaining > s.config.Threshold {
@@ -574,6 +563,10 @@ func (s *AutoResetService) activateThresholdCheck() error {
 		return err
 	}
 	
+	// 启动阈值检查时暂停SchedulerService积分获取任务（整个检查期间）
+	utils.Logf("[阈值触发] ⏸️  暂停SchedulerService积分获取任务 (整个检查期间)")
+	s.schedulerSvc.PauseBalanceTask()
+	
 	s.thresholdActive = true
 	utils.Logf("[阈值触发] ✅ 阈值检查任务已激活")
 	
@@ -598,6 +591,10 @@ func (s *AutoResetService) deactivateThresholdCheck() {
 		}
 		s.thresholdJob = nil
 	}
+	
+	// 停用阈值检查时恢复SchedulerService积分获取任务
+	utils.Logf("[阈值触发] ▶️  恢复SchedulerService积分获取任务 (阈值检查已结束)")
+	s.schedulerSvc.ResumeBalanceTask()
 	
 	s.thresholdActive = false
 	utils.Logf("[阈值触发] ⏹️  阈值检查任务已停用")

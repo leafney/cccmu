@@ -975,19 +975,37 @@ func (s *SchedulerService) PauseBalanceTask() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	
+	// 检查是否已经暂停
 	if s.balanceTaskPaused {
 		utils.Logf("[任务协调] ⚠️  积分获取任务已暂停，无需重复操作")
 		return
 	}
 	
-	if s.balanceJob != nil {
-		utils.Logf("[任务协调] ⏸️  暂停积分余额获取任务 (ID: %v)", s.balanceJob.ID())
-		if err := s.scheduler.RemoveJob(s.balanceJob.ID()); err != nil {
-			utils.Logf("[任务协调] ❌ 暂停积分任务失败: %v", err)
-		} else {
-			s.balanceTaskPaused = true
-			utils.Logf("[任务协调] ✅ 积分余额获取任务已暂停")
-		}
+	// 检查任务是否存在
+	if s.balanceJob == nil {
+		utils.Logf("[任务协调] ⚠️  积分获取任务不存在，更新暂停状态")
+		s.balanceTaskPaused = true
+		return
+	}
+	
+	// 检查调度器状态
+	if s.scheduler == nil || !s.isRunning {
+		utils.Logf("[任务协调] ⚠️  调度器未运行，直接更新暂停状态")
+		s.balanceTaskPaused = true
+		s.balanceJob = nil
+		return
+	}
+	
+	utils.Logf("[任务协调] ⏸️  暂停积分余额获取任务 (ID: %v)", s.balanceJob.ID())
+	if err := s.scheduler.RemoveJob(s.balanceJob.ID()); err != nil {
+		utils.Logf("[任务协调] ❌ 暂停积分任务失败: %v", err)
+		// 即使失败也要清理本地状态
+		s.balanceJob = nil
+		s.balanceTaskPaused = true
+	} else {
+		s.balanceTaskPaused = true
+		s.balanceJob = nil
+		utils.Logf("[任务协调] ✅ 积分余额获取任务已暂停")
 	}
 }
 
@@ -996,8 +1014,29 @@ func (s *SchedulerService) ResumeBalanceTask() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	
+	// 检查是否已经在运行
 	if !s.balanceTaskPaused {
 		utils.Logf("[任务协调] ⚠️  积分获取任务未暂停，无需恢复")
+		return
+	}
+	
+	// 检查调度器状态
+	if s.scheduler == nil {
+		utils.Logf("[任务协调] ❌ 调度器不存在，无法恢复积分获取任务")
+		s.balanceTaskPaused = false // 更新状态以保持一致性
+		return
+	}
+	
+	if !s.isRunning {
+		utils.Logf("[任务协调] ⚠️  调度器未运行，跳过积分任务恢复")
+		s.balanceTaskPaused = false // 更新状态以保持一致性
+		return
+	}
+	
+	// 检查是否已经存在任务（防止重复创建）
+	if s.balanceJob != nil {
+		utils.Logf("[任务协调] ⚠️  积分获取任务已存在 (ID: %v)，更新状态", s.balanceJob.ID())
+		s.balanceTaskPaused = false
 		return
 	}
 	
@@ -1011,12 +1050,32 @@ func (s *SchedulerService) ResumeBalanceTask() {
 	)
 	if err != nil {
 		utils.Logf("[任务协调] ❌ 恢复积分任务失败: %v", err)
+		// 即使失败也要更新状态以避免状态不一致
+		s.balanceTaskPaused = false
 		return
 	}
 	
 	s.balanceJob = balanceJob
 	s.balanceTaskPaused = false
 	utils.Logf("[任务协调] ✅ 积分余额获取任务已恢复 (ID: %v)", balanceJob.ID())
+}
+
+// IsBalanceTaskRunning 检查积分余额获取任务是否正在运行
+func (s *SchedulerService) IsBalanceTaskRunning() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	
+	// 检查基本状态
+	if s.balanceTaskPaused || s.balanceJob == nil || !s.isRunning {
+		return false
+	}
+	
+	// 检查调度器状态
+	if s.scheduler == nil {
+		return false
+	}
+	
+	return true
 }
 
 // NotifyBalanceUpdate 通知积分余额更新（供阈值触发任务调用）
