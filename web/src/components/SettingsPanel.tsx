@@ -26,7 +26,10 @@ export function SettingsPanel({ className = '', onConfigUpdate }: SettingsPanelP
       timeEnabled: false,
       resetTime: '',
       thresholdEnabled: false,
-      threshold: 0
+      threshold: 0,
+      thresholdTimeEnabled: false,
+      thresholdStartTime: '',
+      thresholdEndTime: ''
     },
     version: {
       version: 'Loading...',

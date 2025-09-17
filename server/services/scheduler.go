@@ -11,6 +11,7 @@ import (
 	"github.com/leafney/cccmu/server/client"
 	"github.com/leafney/cccmu/server/database"
 	"github.com/leafney/cccmu/server/models"
+	"github.com/leafney/cccmu/server/utils"
 )
 
 // SchedulerService 定时任务服务
@@ -30,6 +31,9 @@ type SchedulerService struct {
 	resetStatusListeners  []chan bool
 	autoScheduler         *AutoSchedulerService
 	autoScheduleListeners []chan bool // 自动调度状态变化监听器
+	balanceJob            gocron.Job  // 积分余额任务引用
+	balanceTaskPaused     bool        // 积分余额任务暂停状态
+	autoResetService      *AutoResetService // 自动重置服务引用
 }
 
 // NewSchedulerService 创建新的调度服务
@@ -139,21 +143,41 @@ func (s *SchedulerService) Start() error {
 		return fmt.Errorf("创建使用数据定时任务失败: %w", err)
 	}
 
-	// 添加积分余额定时任务，间隔错开20秒执行
-	balanceJob, err := s.scheduler.NewJob(
-		gocron.DurationJob(time.Duration(s.config.Interval)*time.Second),
-		gocron.NewTask(s.fetchAndSaveBalance),
-		gocron.WithSingletonMode(gocron.LimitModeReschedule),
-		gocron.WithStartAt(
-			gocron.WithStartDateTime(time.Now().Add(20*time.Second)),
-		),
-	)
-	if err != nil {
-		return fmt.Errorf("创建积分余额定时任务失败: %w", err)
+	// 检查是否有阈值任务正在运行
+	var shouldCreateBalanceTask = true
+	if s.autoResetService != nil && s.autoResetService.IsThresholdTaskRunning() {
+		utils.Logf("[任务协调] ⚠️  检测到阈值任务正在运行，跳过积分余额任务创建")
+		shouldCreateBalanceTask = false
+		s.balanceTaskPaused = true
+		s.balanceJob = nil
+	}
+
+	if shouldCreateBalanceTask {
+		// 添加积分余额定时任务，间隔错开20秒执行
+		balanceJob, err := s.scheduler.NewJob(
+			gocron.DurationJob(time.Duration(s.config.Interval)*time.Second),
+			gocron.NewTask(s.fetchAndSaveBalance),
+			gocron.WithSingletonMode(gocron.LimitModeReschedule),
+			gocron.WithStartAt(
+				gocron.WithStartDateTime(time.Now().Add(20*time.Second)),
+			),
+		)
+		if err != nil {
+			return fmt.Errorf("创建积分余额定时任务失败: %w", err)
+		}
+
+		// 保存积分余额任务引用
+		s.balanceJob = balanceJob
+		s.balanceTaskPaused = false
+		utils.Logf("[任务协调] ✅ 积分余额定时任务创建成功，任务ID: %v，间隔: %d秒", balanceJob.ID(), s.config.Interval)
 	}
 
 	log.Printf("使用数据定时任务创建成功，任务ID: %v，间隔: %d秒", usageJob.ID(), s.config.Interval)
-	log.Printf("积分余额定时任务创建成功，任务ID: %v，间隔: %d秒", balanceJob.ID(), s.config.Interval)
+	if shouldCreateBalanceTask && s.balanceJob != nil {
+		log.Printf("积分余额定时任务创建成功，任务ID: %v，间隔: %d秒", s.balanceJob.ID(), s.config.Interval)
+	} else {
+		log.Printf("积分余额定时任务已跳过创建（检测到阈值任务冲突）")
+	}
 
 	// 启动调度器
 	s.scheduler.Start()
@@ -165,9 +189,13 @@ func (s *SchedulerService) Start() error {
 	go func() {
 		time.Sleep(100 * time.Millisecond) // 短暂延迟，确保SSE连接已建立
 		s.fetchAndSaveData()
-		// 延迟5秒后获取积分余额，避免并发
-		time.Sleep(5 * time.Second)
-		s.fetchAndSaveBalance()
+		// 延迟5秒后获取积分余额，避免并发（仅在没有阈值任务冲突时执行）
+		if shouldCreateBalanceTask {
+			time.Sleep(5 * time.Second)
+			s.fetchAndSaveBalance()
+		} else {
+			utils.Logf("[任务协调] ⚠️  跳过立即执行积分获取（阈值任务冲突）")
+		}
 	}()
 
 	return nil
@@ -414,7 +442,7 @@ func (s *SchedulerService) startWithoutLock() error {
 	}
 
 	// 添加积分余额定时任务，间隔错开30秒执行
-	_, err = s.scheduler.NewJob(
+	balanceJob, err := s.scheduler.NewJob(
 		gocron.DurationJob(time.Duration(s.config.Interval)*time.Second),
 		gocron.NewTask(s.fetchAndSaveBalance),
 		gocron.WithSingletonMode(gocron.LimitModeReschedule),
@@ -425,6 +453,10 @@ func (s *SchedulerService) startWithoutLock() error {
 	if err != nil {
 		return fmt.Errorf("创建积分余额定时任务失败: %w", err)
 	}
+
+	// 保存积分余额任务引用
+	s.balanceJob = balanceJob
+	s.balanceTaskPaused = false
 
 	log.Printf("使用数据定时任务已创建，间隔: %d秒", s.config.Interval)
 	log.Printf("积分余额定时任务已创建，间隔: %d秒", s.config.Interval)
@@ -938,6 +970,65 @@ func (s *SchedulerService) NotifyAutoScheduleChange() {
 	}
 }
 
+// PauseBalanceTask 暂停积分余额获取任务
+func (s *SchedulerService) PauseBalanceTask() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	if s.balanceTaskPaused {
+		utils.Logf("[任务协调] ⚠️  积分获取任务已暂停，无需重复操作")
+		return
+	}
+	
+	if s.balanceJob != nil {
+		utils.Logf("[任务协调] ⏸️  暂停积分余额获取任务 (ID: %v)", s.balanceJob.ID())
+		if err := s.scheduler.RemoveJob(s.balanceJob.ID()); err != nil {
+			utils.Logf("[任务协调] ❌ 暂停积分任务失败: %v", err)
+		} else {
+			s.balanceTaskPaused = true
+			utils.Logf("[任务协调] ✅ 积分余额获取任务已暂停")
+		}
+	}
+}
+
+// ResumeBalanceTask 恢复积分余额获取任务  
+func (s *SchedulerService) ResumeBalanceTask() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	if !s.balanceTaskPaused {
+		utils.Logf("[任务协调] ⚠️  积分获取任务未暂停，无需恢复")
+		return
+	}
+	
+	// 重新创建积分余额任务
+	utils.Logf("[任务协调] ▶️  重新创建积分余额获取任务")
+	balanceJob, err := s.scheduler.NewJob(
+		gocron.DurationJob(time.Duration(s.config.Interval)*time.Second),
+		gocron.NewTask(s.fetchAndSaveBalance),
+		gocron.WithSingletonMode(gocron.LimitModeReschedule),
+		gocron.WithStartAt(gocron.WithStartDateTime(time.Now().Add(20*time.Second))),
+	)
+	if err != nil {
+		utils.Logf("[任务协调] ❌ 恢复积分任务失败: %v", err)
+		return
+	}
+	
+	s.balanceJob = balanceJob
+	s.balanceTaskPaused = false
+	utils.Logf("[任务协调] ✅ 积分余额获取任务已恢复 (ID: %v)", balanceJob.ID())
+}
+
+// NotifyBalanceUpdate 通知积分余额更新（供阈值触发任务调用）
+func (s *SchedulerService) NotifyBalanceUpdate(balance *models.CreditBalance) {
+	s.mu.Lock()
+	s.lastBalance = balance
+	s.mu.Unlock()
+	
+	s.notifyBalanceListeners(balance)
+	utils.Logf("[任务协调] 📡 积分余额已更新并推送: %d", balance.Remaining)
+}
+
 // Shutdown 关闭服务
 func (s *SchedulerService) Shutdown() {
 	s.Stop()
@@ -977,4 +1068,11 @@ func (s *SchedulerService) Shutdown() {
 	s.resetStatusListeners = nil
 	s.autoScheduleListeners = nil
 	s.mu.Unlock()
+}
+
+// SetAutoResetService 设置自动重置服务引用（用于任务协调）
+func (s *SchedulerService) SetAutoResetService(autoResetService *AutoResetService) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.autoResetService = autoResetService
 }

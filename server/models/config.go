@@ -87,8 +87,11 @@ type AutoResetConfig struct {
 	Enabled          bool   `json:"enabled"`          // 是否启用自动重置
 	TimeEnabled      bool   `json:"timeEnabled"`      // 时间触发条件是否启用
 	ResetTime        string `json:"resetTime"`        // 重置时间 "HH:MM" 格式
-	ThresholdEnabled bool   `json:"thresholdEnabled"` // 积分阈值触发是否启用（预留）
-	Threshold        int    `json:"threshold"`        // 积分阈值（预留）
+	ThresholdEnabled bool   `json:"thresholdEnabled"` // 积分阈值触发是否启用
+	Threshold        int    `json:"threshold"`        // 积分阈值
+	ThresholdTimeEnabled bool   `json:"thresholdTimeEnabled"` // 阈值时间范围是否启用
+	ThresholdStartTime   string `json:"thresholdStartTime"`   // 阈值检查开始时间 "HH:MM"
+	ThresholdEndTime     string `json:"thresholdEndTime"`     // 阈值检查结束时间 "HH:MM"
 }
 
 // ValidateTime 验证自动重置时间格式
@@ -98,7 +101,48 @@ func (a *AutoResetConfig) ValidateTime() error {
 			return fmt.Errorf("重置时间格式错误: %v", err)
 		}
 	}
+	
+	// 验证阈值时间范围格式
+	if a.Enabled && a.ThresholdEnabled && a.ThresholdTimeEnabled {
+		if a.ThresholdStartTime != "" {
+			if err := validateTimeFormat(a.ThresholdStartTime); err != nil {
+				return fmt.Errorf("阈值检查开始时间格式错误: %v", err)
+			}
+		}
+		if a.ThresholdEndTime != "" {
+			if err := validateTimeFormat(a.ThresholdEndTime); err != nil {
+				return fmt.Errorf("阈值检查结束时间格式错误: %v", err)
+			}
+		}
+	}
+	
 	return nil
+}
+
+// IsInThresholdTimeRange 检查当前时间是否在阈值检查时间范围内
+func (a *AutoResetConfig) IsInThresholdTimeRange(now time.Time) bool {
+	if !a.ThresholdEnabled || !a.ThresholdTimeEnabled {
+		return true // 未启用时间限制，始终允许检查
+	}
+	
+	if a.ThresholdStartTime == "" || a.ThresholdEndTime == "" {
+		return true // 时间未设置，始终允许检查
+	}
+	
+	currentTime := now.Format("15:04")
+	
+	// 如果开始时间和结束时间相同，不在范围内
+	if a.ThresholdStartTime == a.ThresholdEndTime {
+		return false
+	}
+	
+	// 同日范围 (如 09:00-18:00)
+	if a.ThresholdStartTime <= a.ThresholdEndTime {
+		return currentTime >= a.ThresholdStartTime && currentTime <= a.ThresholdEndTime
+	}
+	
+	// 跨日范围 (如 22:00-06:00)
+	return currentTime >= a.ThresholdStartTime || currentTime <= a.ThresholdEndTime
 }
 
 // UserConfig 用户配置
@@ -163,10 +207,14 @@ func GetDefaultConfig() *UserConfig {
 			MonitoringOn: true, // 默认时间范围内开启监控
 		},
 		AutoReset: AutoResetConfig{
-			Enabled:          false,
-			ResetTime:        "",
-			ThresholdEnabled: false, // 预留功能，暂不启用
-			Threshold:        0,     // 预留功能，暂不设置
+			Enabled:              false,
+			TimeEnabled:          false,
+			ResetTime:            "",
+			ThresholdEnabled:     false,
+			Threshold:            0,
+			ThresholdTimeEnabled: false,
+			ThresholdStartTime:   "",
+			ThresholdEndTime:     "",
 		},
 	}
 }

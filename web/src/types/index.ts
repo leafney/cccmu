@@ -19,8 +19,11 @@ export interface IAutoResetConfig {
   enabled: boolean;          // 是否启用自动重置
   timeEnabled: boolean;      // 时间触发条件是否启用
   resetTime: string;         // 重置时间 "HH:MM"
-  thresholdEnabled: boolean; // 积分阈值触发是否启用（预留）
-  threshold: number;         // 积分阈值（预留）
+  thresholdEnabled: boolean; // 积分阈值触发是否启用
+  threshold: number;         // 积分阈值
+  thresholdTimeEnabled: boolean; // 阈值时间范围是否启用
+  thresholdStartTime: string;    // 阈值检查开始时间 "HH:MM"
+  thresholdEndTime: string;      // 阈值检查结束时间 "HH:MM"
 }
 
 // 版本信息
