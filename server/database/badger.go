@@ -41,7 +41,7 @@ func (b *BadgerDB) SaveConfig(config *models.UserConfig) error {
 		}
 
 		// 保存各个配置项
-		configs := map[string]interface{}{
+		configs := map[string]any{
 			"config:cookie":                   config.Cookie,
 			"config:interval":                 config.Interval,
 			"config:timerange":                config.TimeRange,
@@ -91,8 +91,8 @@ func (b *BadgerDB) GetConfig() (*models.UserConfig, error) {
 		if err == nil {
 			err = cookieItem.Value(func(val []byte) error {
 				var cookie string
-				if err := json.Unmarshal(val, &cookie); err != nil {
-					return err
+				if unmarshalErr := json.Unmarshal(val, &cookie); unmarshalErr != nil {
+					return unmarshalErr
 				}
 				config.Cookie = cookie
 				return nil
@@ -254,3 +254,37 @@ func (b *BadgerDB) CleanOldData(keepHours int) error {
 	})
 }
 
+// SaveCreditBalance 保存积分余额信息
+func (b *BadgerDB) SaveCreditBalance(balance *models.CreditBalance) error {
+	return b.db.Update(func(txn *badger.Txn) error {
+		data, err := json.Marshal(balance)
+		if err != nil {
+			return err
+		}
+
+		return txn.Set([]byte("balance:latest"), data)
+	})
+}
+
+// GetCreditBalance 获取积分余额信息
+func (b *BadgerDB) GetCreditBalance() (*models.CreditBalance, error) {
+	var balance *models.CreditBalance
+
+	err := b.db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte("balance:latest"))
+		if err != nil {
+			if err == badger.ErrKeyNotFound {
+				return nil // 返回nil表示未找到数据
+			}
+			return err
+		}
+
+		err = item.Value(func(val []byte) error {
+			balance = &models.CreditBalance{}
+			return json.Unmarshal(val, balance)
+		})
+		return err
+	})
+
+	return balance, err
+}

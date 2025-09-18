@@ -30,9 +30,9 @@ type SchedulerService struct {
 	errorListeners        []chan string
 	resetStatusListeners  []chan bool
 	autoScheduler         *AutoSchedulerService
-	autoScheduleListeners []chan bool // 自动调度状态变化监听器
-	balanceJob            gocron.Job  // 积分余额任务引用
-	balanceTaskPaused     bool        // 积分余额任务暂停状态
+	autoScheduleListeners []chan bool       // 自动调度状态变化监听器
+	balanceJob            gocron.Job        // 积分余额任务引用
+	balanceTaskPaused     bool              // 积分余额任务暂停状态
 	autoResetService      *AutoResetService // 自动重置服务引用
 }
 
@@ -649,6 +649,12 @@ func (s *SchedulerService) fetchAndSaveBalance() error {
 		return err
 	}
 
+	// 保存到BadgerDB（持久化存储）
+	if err := s.db.SaveCreditBalance(balance); err != nil {
+		log.Printf("保存积分余额到数据库失败: %v", err)
+		// 注意：这里不返回错误，继续执行内存更新和通知
+	}
+
 	// 更新最新积分余额并通知监听器
 	s.mu.Lock()
 	s.lastBalance = balance
@@ -974,20 +980,20 @@ func (s *SchedulerService) NotifyAutoScheduleChange() {
 func (s *SchedulerService) PauseBalanceTask() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	// 检查是否已经暂停
 	if s.balanceTaskPaused {
 		utils.Logf("[任务协调] ⚠️  积分获取任务已暂停，无需重复操作")
 		return
 	}
-	
+
 	// 检查任务是否存在
 	if s.balanceJob == nil {
 		utils.Logf("[任务协调] ⚠️  积分获取任务不存在，更新暂停状态")
 		s.balanceTaskPaused = true
 		return
 	}
-	
+
 	// 检查调度器状态
 	if s.scheduler == nil || !s.isRunning {
 		utils.Logf("[任务协调] ⚠️  调度器未运行，直接更新暂停状态")
@@ -995,7 +1001,7 @@ func (s *SchedulerService) PauseBalanceTask() {
 		s.balanceJob = nil
 		return
 	}
-	
+
 	utils.Logf("[任务协调] ⏸️  暂停积分余额获取任务 (ID: %v)", s.balanceJob.ID())
 	if err := s.scheduler.RemoveJob(s.balanceJob.ID()); err != nil {
 		utils.Logf("[任务协调] ❌ 暂停积分任务失败: %v", err)
@@ -1013,9 +1019,9 @@ func (s *SchedulerService) PauseBalanceTask() {
 func (s *SchedulerService) RebuildBalanceTask() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	utils.Logf("[任务协调] 🔄 重建积分余额获取任务")
-	
+
 	// 第一步：移除现有任务
 	if s.balanceJob != nil {
 		utils.Logf("[任务协调] 🗑️  移除现有积分任务 (ID: %v)", s.balanceJob.ID())
@@ -1026,7 +1032,7 @@ func (s *SchedulerService) RebuildBalanceTask() {
 		}
 		s.balanceJob = nil
 	}
-	
+
 	// 第二步：检查调度器状态，如果异常则重建整个调度器
 	if s.scheduler == nil || !s.isRunning {
 		utils.Logf("[任务协调] 🔧 检测到调度器异常，尝试重建调度器")
@@ -1036,7 +1042,7 @@ func (s *SchedulerService) RebuildBalanceTask() {
 			return
 		}
 	}
-	
+
 	// 第三步：创建新的积分任务
 	utils.Logf("[任务协调] 🔨 创建新的积分余额获取任务")
 	balanceJob, err := s.scheduler.NewJob(
@@ -1050,11 +1056,11 @@ func (s *SchedulerService) RebuildBalanceTask() {
 		s.balanceTaskPaused = false
 		return
 	}
-	
+
 	s.balanceJob = balanceJob
 	s.balanceTaskPaused = false
 	utils.Logf("[任务协调] ✅ 积分余额获取任务已重建 (ID: %v)", balanceJob.ID())
-	
+
 	// 第四步：立即执行一次获取，避免等待
 	go func() {
 		time.Sleep(1 * time.Second) // 短暂延迟确保任务已就绪
@@ -1069,22 +1075,22 @@ func (s *SchedulerService) RebuildBalanceTask() {
 func (s *SchedulerService) ResumeBalanceTask() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	// 检查是否已经在运行
 	if !s.balanceTaskPaused {
 		utils.Logf("[任务协调] ⚠️  积分获取任务未暂停，无需恢复")
 		return
 	}
-	
+
 	utils.Logf("[任务协调] ▶️  恢复积分余额获取任务")
-	
+
 	// 检查是否已经存在任务（防止重复创建）
 	if s.balanceJob != nil {
 		utils.Logf("[任务协调] ⚠️  积分获取任务已存在 (ID: %v)，更新状态", s.balanceJob.ID())
 		s.balanceTaskPaused = false
 		return
 	}
-	
+
 	// 如果调度器不存在或未运行，使用重建策略
 	if s.scheduler == nil || !s.isRunning {
 		utils.Logf("[任务协调] 🔧 调度器状态异常，采用重建策略")
@@ -1093,7 +1099,7 @@ func (s *SchedulerService) ResumeBalanceTask() {
 		s.mu.Lock() // 重新获取锁
 		return
 	}
-	
+
 	// 重新创建积分余额任务
 	utils.Logf("[任务协调] 🔨 重新创建积分余额获取任务")
 	balanceJob, err := s.scheduler.NewJob(
@@ -1107,11 +1113,11 @@ func (s *SchedulerService) ResumeBalanceTask() {
 		s.balanceTaskPaused = false
 		return
 	}
-	
+
 	s.balanceJob = balanceJob
 	s.balanceTaskPaused = false
 	utils.Logf("[任务协调] ✅ 积分余额获取任务已恢复 (ID: %v)", balanceJob.ID())
-	
+
 	// 立即执行一次获取
 	go func() {
 		time.Sleep(1 * time.Second)
@@ -1126,26 +1132,32 @@ func (s *SchedulerService) ResumeBalanceTask() {
 func (s *SchedulerService) IsBalanceTaskRunning() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	// 检查基本状态
 	if s.balanceTaskPaused || s.balanceJob == nil || !s.isRunning {
 		return false
 	}
-	
+
 	// 检查调度器状态
 	if s.scheduler == nil {
 		return false
 	}
-	
+
 	return true
 }
 
 // NotifyBalanceUpdate 通知积分余额更新（供阈值触发任务调用）
 func (s *SchedulerService) NotifyBalanceUpdate(balance *models.CreditBalance) {
+	// 保存到BadgerDB（持久化存储）
+	if err := s.db.SaveCreditBalance(balance); err != nil {
+		log.Printf("保存积分余额到数据库失败: %v", err)
+		// 注意：这里不返回错误，继续执行内存更新和通知
+	}
+
 	s.mu.Lock()
 	s.lastBalance = balance
 	s.mu.Unlock()
-	
+
 	s.notifyBalanceListeners(balance)
 	utils.Logf("[任务协调] 📡 积分余额已更新并推送: %d", balance.Remaining)
 }
@@ -1194,7 +1206,7 @@ func (s *SchedulerService) Shutdown() {
 // rebuildScheduler 重建调度器（内部方法）
 func (s *SchedulerService) rebuildScheduler() error {
 	utils.Logf("[任务协调] 🔄 重建调度器")
-	
+
 	// 停止并关闭现有调度器
 	if s.scheduler != nil {
 		s.scheduler.StopJobs()
@@ -1202,15 +1214,15 @@ func (s *SchedulerService) rebuildScheduler() error {
 			utils.Logf("[任务协调] ⚠️  关闭旧调度器失败: %v", err)
 		}
 	}
-	
+
 	// 创建新调度器
 	newScheduler, err := gocron.NewScheduler()
 	if err != nil {
 		return fmt.Errorf("创建新调度器失败: %w", err)
 	}
-	
+
 	s.scheduler = newScheduler
-	
+
 	// 重新创建使用数据任务
 	usageJob, err := s.scheduler.NewJob(
 		gocron.DurationJob(time.Duration(s.config.Interval)*time.Second),
@@ -1220,11 +1232,11 @@ func (s *SchedulerService) rebuildScheduler() error {
 	if err != nil {
 		return fmt.Errorf("创建使用数据任务失败: %w", err)
 	}
-	
+
 	// 启动调度器
 	s.scheduler.Start()
 	s.isRunning = true
-	
+
 	utils.Logf("[任务协调] ✅ 调度器重建完成，使用数据任务ID: %v", usageJob.ID())
 	return nil
 }
