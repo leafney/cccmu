@@ -44,6 +44,7 @@ export interface IUserConfig {
   autoSchedule: IAutoScheduleConfig; // 自动调度配置
   autoReset: IAutoResetConfig;       // 自动重置配置
   version: IVersionInfo;            // 版本信息
+  plan: string;                     // 订阅等级
 }
 
 // 用户配置（API请求）
@@ -87,6 +88,7 @@ export interface IChartDataPoint {
 // 积分余额信息
 export interface ICreditBalance {
   remaining: number;
+  plan: string;       // 订阅等级
   updatedAt: string;
 }
 

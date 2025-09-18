@@ -134,10 +134,13 @@ func (c *ClaudeAPIClient) FetchUsageData() ([]models.UsageData, error) {
 
 // ClaudeCreditsResponse Claude积分API响应
 type ClaudeCreditsResponse struct {
-	UserID  int    `json:"userId"`
-	Email   string `json:"email"`
-	Credits int    `json:"credits"`
-	Plan    string `json:"plan"`
+	UserID        int    `json:"userId"`
+	Email         string `json:"email"`
+	Credits       int    `json:"credits"`
+	NormalCredits int    `json:"normalCredits"`
+	BonusCredits  int    `json:"bonusCredits"`
+	CreditLimit   int    `json:"creditLimit"`
+	Plan          string `json:"plan"`
 }
 
 // FetchCreditBalance 获取积分余额
@@ -197,6 +200,7 @@ func (c *ClaudeAPIClient) FetchCreditBalance() (*models.CreditBalance, error) {
 
 	result := &models.CreditBalance{
 		Remaining: creditsResp.Credits,
+		Plan:      creditsResp.Plan,
 		UpdatedAt: time.Now(),
 	}
 	utils.Logf("API请求成功: FetchCreditBalance - 获取到余额 %d", creditsResp.Credits)
