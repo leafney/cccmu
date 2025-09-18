@@ -91,10 +91,10 @@ func NewSchedulerService(db *database.BadgerDB) (*SchedulerService, error) {
 		} else {
 			utils.Logf("[调度器] ✅ 每日积分统计服务已初始化")
 			
-			// 根据配置的初始状态决定是否激活任务
+			// 根据配置的初始状态决定是否启动任务
 			if config.DailyUsageEnabled {
-				if err := dailyUsageTracker.Activate(); err != nil {
-					utils.Logf("[调度器] ❌ 初始化时激活每日积分统计任务失败: %v", err)
+				if err := dailyUsageTracker.Start(); err != nil {
+					utils.Logf("[调度器] ❌ 初始化时启动每日积分统计任务失败: %v", err)
 				} else {
 					utils.Logf("[调度器] ✅ 每日积分统计任务已在初始化时激活")
 				}
@@ -1339,7 +1339,7 @@ func (s *SchedulerService) handleDailyUsageConfigChange(oldConfig, newConfig *mo
 	if newEnabled {
 		// 启用每日积分统计任务
 		if !s.dailyUsageTracker.IsActive() {
-			if err := s.dailyUsageTracker.Activate(); err != nil {
+			if err := s.dailyUsageTracker.Start(); err != nil {
 				utils.Logf("[配置更新] ❌ 启用每日积分统计任务失败: %v", err)
 			} else {
 				utils.Logf("[配置更新] ✅ 每日积分统计任务已启用")
@@ -1350,7 +1350,7 @@ func (s *SchedulerService) handleDailyUsageConfigChange(oldConfig, newConfig *mo
 	} else {
 		// 停止每日积分统计任务
 		if s.dailyUsageTracker.IsActive() {
-			if err := s.dailyUsageTracker.Deactivate(); err != nil {
+			if err := s.dailyUsageTracker.Stop(); err != nil {
 				utils.Logf("[配置更新] ❌ 停止每日积分统计任务失败: %v", err)
 			} else {
 				utils.Logf("[配置更新] ✅ 每日积分统计任务已停止")

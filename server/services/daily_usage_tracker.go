@@ -102,17 +102,17 @@ func (d *DailyUsageTracker) IsActive() bool {
 	return d.isActive
 }
 
-// Activate 激活定时任务
-func (d *DailyUsageTracker) Activate() error {
+// Start 启动定时任务
+func (d *DailyUsageTracker) Start() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	if !d.isInitialized {
-		return fmt.Errorf("服务未初始化，无法激活任务")
+		return fmt.Errorf("服务未初始化，无法启动任务")
 	}
 
 	if d.isActive {
-		utils.Logf("[每日积分统计] 任务已激活，跳过操作")
+		utils.Logf("[每日积分统计] 任务已在运行，跳过操作")
 		return nil
 	}
 
@@ -129,7 +129,7 @@ func (d *DailyUsageTracker) Activate() error {
 
 	d.job = job
 	d.isActive = true
-	utils.Logf("[每日积分统计] ✅ 任务已激活")
+	utils.Logf("[每日积分统计] ✅ 任务已启动")
 	utils.Logf("[每日积分统计] 📋 任务ID: %v", job.ID())
 	
 	// 计算下次执行时间
@@ -137,20 +137,11 @@ func (d *DailyUsageTracker) Activate() error {
 	nextRun := now.Truncate(time.Hour).Add(time.Hour)
 	utils.Logf("[每日积分统计] 🕐 下次执行: %s", nextRun.Format("2006-01-02 15:04:05"))
 
-	// 立即执行一次统计任务
-	go func() {
-		time.Sleep(5 * time.Second) // 延迟5秒，避免与其他服务冲突
-		utils.Logf("[每日积分统计] 🚀 执行首次统计任务")
-		if err := d.collectHourlyUsage(); err != nil {
-			utils.Logf("[每日积分统计] ❌ 首次统计任务执行失败: %v", err)
-		}
-	}()
-
 	return nil
 }
 
-// Deactivate 停止定时任务
-func (d *DailyUsageTracker) Deactivate() error {
+// Stop 停止定时任务
+func (d *DailyUsageTracker) Stop() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
