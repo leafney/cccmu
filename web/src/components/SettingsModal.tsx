@@ -59,7 +59,8 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate, isMonitoring = 
       gitCommit: 'Loading...',
       buildTime: '',
       goVersion: ''
-    }
+    },
+    plan: ''
   });
   const [cookieInput, setCookieInput] = useState<string>('');
   const [saving, setSaving] = useState(false);
@@ -524,6 +525,7 @@ function BasicConfigTab({
         >
           <option value={30}>30秒</option>
           <option value={60}>1分钟</option>
+          <option value={180}>3分钟</option>
           <option value={300}>5分钟</option>
           <option value={600}>10分钟</option>
           <option value={1800}>30分钟</option>
@@ -1116,6 +1118,27 @@ function StatusInfoTab({
 }) {
   return (
     <div className="space-y-6 relative">      
+      {/* 订阅等级 */}
+      <div>
+        <div className="flex items-center mb-4">
+          <Info className="w-5 h-5 mr-2 text-gray-600" />
+          <h3 className="text-sm font-semibold text-gray-900">订阅等级</h3>
+        </div>
+        
+        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+          <span className="text-sm text-gray-700">当前订阅</span>
+          <span className={`text-sm font-medium px-2 py-1 rounded ${
+            config.plan === 'ULTRA' ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg' :
+            config.plan === 'MAX' ? 'bg-gradient-to-r from-red-500 to-orange-600 text-white shadow-md' :
+            config.plan === 'PRO' ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white' :
+            config.plan === 'FREE' ? 'bg-gray-200 text-gray-700' :
+            'bg-gray-100 text-gray-500'
+          }`}>
+            {config.plan || '未知'}
+          </span>
+        </div>
+      </div>
+
       {/* 当前运行状态 */}
       <div>
         <div className="flex items-center mb-4">
