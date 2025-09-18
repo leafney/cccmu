@@ -195,6 +195,7 @@ func main() {
 	controlHandler := handlers.NewControlHandler(scheduler, db)
 	sseHandler := handlers.NewSSEHandler(db, scheduler, authManager)
 	authHandler := handlers.NewAuthHandler(authManager, scheduler, db)
+	dailyUsageHandler := handlers.NewDailyUsageHandler(scheduler, authManager)
 
 	// API路由
 	api := app.Group("/api")
@@ -228,6 +229,9 @@ func main() {
 		// 数据相关
 		api.Get("/usage/stream", sseHandler.StreamUsageData)
 		api.Get("/usage/data", sseHandler.GetUsageData)
+
+		// 积分历史统计
+		api.Get("/history", dailyUsageHandler.GetWeeklyUsage)
 	}
 
 	// 健康检查接口

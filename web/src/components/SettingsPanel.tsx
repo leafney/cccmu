@@ -15,6 +15,7 @@ export function SettingsPanel({ className = '', onConfigUpdate }: SettingsPanelP
     timeRange: 60,
     enabled: false,
     dailyResetUsed: false,
+    dailyUsageEnabled: false,
     autoSchedule: {
       enabled: false,
       startTime: '',

@@ -135,12 +135,14 @@ func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
 		errorListener := h.scheduler.AddErrorListener()
 		resetStatusListener := h.scheduler.AddResetStatusListener()
 		autoScheduleListener := h.scheduler.AddAutoScheduleListener()
+		dailyUsageListener := h.scheduler.AddDailyUsageListener()
 		defer func() {
 			h.scheduler.RemoveDataListener(listener)
 			h.scheduler.RemoveBalanceListener(balanceListener)
 			h.scheduler.RemoveErrorListener(errorListener)
 			h.scheduler.RemoveResetStatusListener(resetStatusListener)
 			h.scheduler.RemoveAutoScheduleListener(autoScheduleListener)
+			h.scheduler.RemoveDailyUsageListener(dailyUsageListener)
 		}()
 
 		// 设置连接保活
@@ -238,6 +240,21 @@ func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
 					continue
 				}
 				fmt.Fprintf(w, "event: monitoring_status\ndata: %s\n\n", jsonData)
+				if err := w.Flush(); err != nil {
+					return
+				}
+
+			case dailyUsageData, ok := <-dailyUsageListener:
+				if !ok {
+					return // 监听器已关闭
+				}
+
+				// 发送每日积分统计数据
+				jsonData, err := json.Marshal(dailyUsageData)
+				if err != nil {
+					continue
+				}
+				fmt.Fprintf(w, "event: daily_usage\ndata: %s\n\n", jsonData)
 				if err := w.Flush(); err != nil {
 					return
 				}

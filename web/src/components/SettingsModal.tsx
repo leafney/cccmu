@@ -38,6 +38,7 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate, isMonitoring = 
     timeRange: 60,
     enabled: false,
     dailyResetUsed: false,
+    dailyUsageEnabled: false,
     autoSchedule: {
       enabled: false,
       startTime: '',
@@ -158,7 +159,8 @@ export function SettingsModal({ isOpen, onClose, onConfigUpdate, isMonitoring = 
       const requestConfig: IUserConfigRequest = {
         interval: config.interval,
         timeRange: config.timeRange,
-        enabled: config.enabled
+        enabled: config.enabled,
+        dailyUsageEnabled: config.dailyUsageEnabled
       };
       
       // 只有在输入了新Cookie时才包含cookie字段
@@ -552,6 +554,37 @@ function BasicConfigTab({
           <option value={720}>12小时</option>
           <option value={1440}>24小时</option>
         </select>
+      </div>
+
+      {/* 每日积分统计 */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          历史积分使用量统计
+        </label>
+        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <div>
+            <span className="text-sm text-gray-700">启用每日积分使用量统计</span>
+            <p className="text-xs text-gray-500 mt-1">
+              开启后会每小时收集积分使用数据，保留最近7天的统计信息
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => updateConfig('dailyUsageEnabled', !config.dailyUsageEnabled)}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
+              config.dailyUsageEnabled ? 'bg-blue-600' : 'bg-gray-300'
+            }`}
+          >
+            <span
+              className={`inline-block h-3 w-3 transform rounded-full bg-white transition duration-200 ${
+                config.dailyUsageEnabled ? 'translate-x-5' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+        <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
+          启用后在首页会显示历史图标，点击可查看最近一周的积分使用趋势
+        </p>
       </div>
 
       {/* 保存按钮 */}
@@ -1172,6 +1205,13 @@ function StatusInfoTab({
             <span className="text-sm text-gray-700">今日重置状态</span>
             <span className={`text-sm font-medium ${config.dailyResetUsed ? 'text-orange-600' : 'text-green-600'}`}>
               {config.dailyResetUsed ? '已使用' : '可使用'}
+            </span>
+          </div>
+          
+          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+            <span className="text-sm text-gray-700">每日积分统计</span>
+            <span className={`text-sm font-medium ${config.dailyUsageEnabled ? 'text-blue-600' : 'text-gray-500'}`}>
+              {config.dailyUsageEnabled ? '已启用' : '未启用'}
             </span>
           </div>
         </div>

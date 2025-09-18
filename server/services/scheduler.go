@@ -17,7 +17,7 @@ import (
 // SchedulerService 定时任务服务
 type SchedulerService struct {
 	scheduler             gocron.Scheduler
-	dailyResetScheduler   gocron.Scheduler // 单独的每日重置任务调度器
+	dailyResetScheduler   gocron.Scheduler     // 单独的每日重置任务调度器
 	db                    *database.BadgerDB
 	apiClient             *client.ClaudeAPIClient
 	config                *models.UserConfig
@@ -30,10 +30,12 @@ type SchedulerService struct {
 	errorListeners        []chan string
 	resetStatusListeners  []chan bool
 	autoScheduler         *AutoSchedulerService
-	autoScheduleListeners []chan bool       // 自动调度状态变化监听器
-	balanceJob            gocron.Job        // 积分余额任务引用
-	balanceTaskPaused     bool              // 积分余额任务暂停状态
-	autoResetService      *AutoResetService // 自动重置服务引用
+	autoScheduleListeners []chan bool              // 自动调度状态变化监听器
+	dailyUsageListeners   []chan []models.DailyUsage // 每日积分统计数据监听器
+	balanceJob            gocron.Job               // 积分余额任务引用
+	balanceTaskPaused     bool                     // 积分余额任务暂停状态
+	autoResetService      *AutoResetService        // 自动重置服务引用
+	dailyUsageTracker     *DailyUsageTracker       // 每日积分统计跟踪服务
 }
 
 // NewSchedulerService 创建新的调度服务
@@ -69,10 +71,20 @@ func NewSchedulerService(db *database.BadgerDB) (*SchedulerService, error) {
 		errorListeners:        make([]chan string, 0),
 		resetStatusListeners:  make([]chan bool, 0),
 		autoScheduleListeners: make([]chan bool, 0),
+		dailyUsageListeners:   make([]chan []models.DailyUsage, 0),
 	}
 
 	// 创建自动调度服务
 	service.autoScheduler = NewAutoSchedulerService(service)
+
+	// 创建每日积分统计服务
+	dailyUsageTracker, err := NewDailyUsageTracker(db, apiClient)
+	if err != nil {
+		log.Printf("创建每日积分统计服务失败: %v", err)
+	} else {
+		service.dailyUsageTracker = dailyUsageTracker
+		log.Printf("每日积分统计服务创建成功")
+	}
 
 	// 立即创建每日重置任务（只需创建一次）
 	if err := service.createDailyResetTask(); err != nil {
@@ -185,6 +197,15 @@ func (s *SchedulerService) Start() error {
 
 	log.Printf("定时任务已启动，间隔: %d秒", s.config.Interval)
 
+	// 根据配置启动每日积分统计服务
+	if s.config.DailyUsageEnabled && s.dailyUsageTracker != nil {
+		if err := s.dailyUsageTracker.Start(); err != nil {
+			log.Printf("启动每日积分统计服务失败: %v", err)
+		} else {
+			log.Printf("每日积分统计服务已启动")
+		}
+	}
+
 	// 立即执行一次，确保在所有监听器建立后执行
 	go func() {
 		time.Sleep(100 * time.Millisecond) // 短暂延迟，确保SSE连接已建立
@@ -231,6 +252,13 @@ func (s *SchedulerService) Stop() error {
 	if err := s.scheduler.Shutdown(); err != nil {
 		log.Printf("强制关闭调度器失败: %v", err)
 		// 不返回错误，继续执行清理
+	}
+
+	// 停止每日积分统计服务
+	if s.dailyUsageTracker != nil && s.dailyUsageTracker.IsRunning() {
+		if err := s.dailyUsageTracker.Stop(); err != nil {
+			log.Printf("停止每日积分统计服务失败: %v", err)
+		}
 	}
 
 	s.isRunning = false
@@ -309,6 +337,9 @@ func (s *SchedulerService) UpdateConfig(newConfig *models.UserConfig) error {
 	if s.autoScheduler != nil {
 		s.autoScheduler.UpdateConfig(&newConfig.AutoSchedule)
 	}
+
+	// 处理每日积分统计配置变更
+	s.handleDailyUsageConfigChange(oldConfig, newConfig)
 
 	// 只在必要时重启任务
 	if needsRestart {
@@ -1178,6 +1209,11 @@ func (s *SchedulerService) Shutdown() {
 		s.autoScheduler.Close()
 	}
 
+	// 关闭每日积分统计服务
+	if s.dailyUsageTracker != nil {
+		s.dailyUsageTracker.Stop()
+	}
+
 	// 关闭所有监听器
 	s.mu.Lock()
 	for _, listener := range s.listeners {
@@ -1195,11 +1231,15 @@ func (s *SchedulerService) Shutdown() {
 	for _, listener := range s.autoScheduleListeners {
 		close(listener)
 	}
+	for _, listener := range s.dailyUsageListeners {
+		close(listener)
+	}
 	s.listeners = nil
 	s.balanceListeners = nil
 	s.errorListeners = nil
 	s.resetStatusListeners = nil
 	s.autoScheduleListeners = nil
+	s.dailyUsageListeners = nil
 	s.mu.Unlock()
 }
 
@@ -1246,4 +1286,105 @@ func (s *SchedulerService) SetAutoResetService(autoResetService *AutoResetServic
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.autoResetService = autoResetService
+}
+
+// handleDailyUsageConfigChange 处理每日积分统计配置变更
+func (s *SchedulerService) handleDailyUsageConfigChange(oldConfig, newConfig *models.UserConfig) {
+	if s.dailyUsageTracker == nil {
+		return
+	}
+
+	oldEnabled := oldConfig != nil && oldConfig.DailyUsageEnabled
+	newEnabled := newConfig.DailyUsageEnabled
+
+	// 配置没有变化，无需处理
+	if oldEnabled == newEnabled {
+		return
+	}
+
+	if newEnabled {
+		// 启用每日积分统计
+		if !s.dailyUsageTracker.IsRunning() {
+			if err := s.dailyUsageTracker.Start(); err != nil {
+				log.Printf("启动每日积分统计服务失败: %v", err)
+			} else {
+				log.Printf("每日积分统计服务已启用")
+			}
+		}
+	} else {
+		// 禁用每日积分统计
+		if s.dailyUsageTracker.IsRunning() {
+			if err := s.dailyUsageTracker.Stop(); err != nil {
+				log.Printf("停止每日积分统计服务失败: %v", err)
+			} else {
+				log.Printf("每日积分统计服务已禁用")
+			}
+		}
+	}
+}
+
+// GetDailyUsageTracker 获取每日积分统计服务引用
+func (s *SchedulerService) GetDailyUsageTracker() *DailyUsageTracker {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.dailyUsageTracker
+}
+
+// GetWeeklyUsage 获取最近一周的积分使用统计
+func (s *SchedulerService) GetWeeklyUsage() (models.DailyUsageList, error) {
+	s.mu.RLock()
+	tracker := s.dailyUsageTracker
+	s.mu.RUnlock()
+
+	if tracker == nil {
+		return nil, fmt.Errorf("每日积分统计服务未初始化")
+	}
+
+	return tracker.GetWeeklyUsage()
+}
+
+// GetConfig 获取当前配置
+func (s *SchedulerService) GetConfig() *models.UserConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.config
+}
+
+// AddDailyUsageListener 添加每日积分统计监听器
+func (s *SchedulerService) AddDailyUsageListener() chan []models.DailyUsage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	listener := make(chan []models.DailyUsage, 10)
+	s.dailyUsageListeners = append(s.dailyUsageListeners, listener)
+	return listener
+}
+
+// RemoveDailyUsageListener 移除每日积分统计监听器
+func (s *SchedulerService) RemoveDailyUsageListener(listener chan []models.DailyUsage) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i, l := range s.dailyUsageListeners {
+		if l == listener {
+			close(l)
+			s.dailyUsageListeners = append(s.dailyUsageListeners[:i], s.dailyUsageListeners[i+1:]...)
+			break
+		}
+	}
+}
+
+// BroadcastDailyUsage 广播每日积分统计数据
+func (s *SchedulerService) BroadcastDailyUsage(data []models.DailyUsage) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, listener := range s.dailyUsageListeners {
+		select {
+		case listener <- data:
+			// 数据发送成功
+		default:
+			// 通道已满，跳过通知
+		}
+	}
 }

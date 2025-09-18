@@ -41,6 +41,7 @@ export interface IUserConfig {
   timeRange: number;                // 分钟
   enabled: boolean;
   dailyResetUsed: boolean;          // 当日重置是否已使用
+  dailyUsageEnabled: boolean;       // 是否启用每日积分使用量统计
   autoSchedule: IAutoScheduleConfig; // 自动调度配置
   autoReset: IAutoResetConfig;       // 自动重置配置
   version: IVersionInfo;            // 版本信息
@@ -49,10 +50,11 @@ export interface IUserConfig {
 
 // 用户配置（API请求）
 export interface IUserConfigRequest {
-  cookie?: string | undefined;      // Cookie内容（设置时使用，可选字段）
-  interval: number;                 // 秒
-  timeRange: number;                // 分钟
+  cookie?: string | undefined;       // Cookie内容（设置时使用，可选字段）
+  interval: number;                  // 秒
+  timeRange: number;                 // 分钟
   enabled: boolean;
+  dailyUsageEnabled?: boolean;       // 是否启用每日积分使用量统计（可选）
   autoSchedule?: IAutoScheduleConfig; // 自动调度配置（可选）
   autoReset?: IAutoResetConfig;       // 自动重置配置（可选）
 }
@@ -99,4 +101,16 @@ export interface IMonitoringStatus {
   autoScheduleEnabled: boolean;   // 自动调度是否启用
   autoScheduleActive: boolean;    // 当前是否在自动调度时间范围内
   timestamp: string;
+}
+
+// 每日积分使用统计
+export interface IDailyUsage {
+  date: string;         // 日期 (YYYY-MM-DD)
+  totalCredits: number; // 当日总积分使用量
+  lastUpdated: string;  // 最后更新时间
+}
+
+// 每日积分统计响应
+export interface IDailyUsageResponse {
+  data: IDailyUsage[];
 }

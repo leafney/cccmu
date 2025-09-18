@@ -1,4 +1,4 @@
-import type { IUserConfig, IUserConfigRequest, IAPIResponse, IUsageData, ICreditBalance, IMonitoringStatus } from '../types';
+import type { IUserConfig, IUserConfigRequest, IAPIResponse, IUsageData, ICreditBalance, IMonitoringStatus, IDailyUsage } from '../types';
 
 // 认证相关接口类型（内部使用）
 
@@ -126,6 +126,11 @@ class APIClient {
     });
   }
 
+  // 触发积分历史统计数据获取（数据通过SSE推送）
+  async getHistory(): Promise<IAPIResponse<string>> {
+    return this.request<string>('/history');
+  }
+
 
   // 创建SSE连接
   createSSEConnection(
@@ -136,6 +141,7 @@ class APIClient {
     onResetStatusUpdate?: (resetUsed: boolean) => void,
     onMonitoringStatusUpdate?: (status: IMonitoringStatus) => void,
     onAuthExpired?: () => void,
+    onDailyUsageUpdate?: (dailyUsage: IDailyUsage[]) => void,
     timeRange: number = 60
   ): EventSource {
     const eventSource = new EventSource(`${API_BASE}/usage/stream?minutes=${timeRange}`);
@@ -203,6 +209,18 @@ class APIClient {
         }
       } catch (error) {
         console.error('解析监控状态数据失败:', error, event.data);
+      }
+    });
+
+    eventSource.addEventListener('daily_usage', (event) => {
+      try {
+        const dailyUsageData = JSON.parse(event.data);
+        console.debug('收到每日积分统计数据:', dailyUsageData);
+        if (onDailyUsageUpdate) {
+          onDailyUsageUpdate(dailyUsageData);
+        }
+      } catch (error) {
+        console.error('解析每日积分统计数据失败:', error, event.data);
       }
     });
 

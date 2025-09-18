@@ -96,13 +96,22 @@ func (h *ConfigHandler) UpdateConfig(c *fiber.Ctx) error {
 		LastCookieValidTime:      currentConfig.LastCookieValidTime,
 		CookieValidationInterval: currentConfig.CookieValidationInterval,
 		DailyResetUsed:           currentConfig.DailyResetUsed,
-		AutoSchedule:             currentConfig.AutoSchedule, // 默认保持原有自动调度配置
-		AutoReset:                currentConfig.AutoReset,    // 默认保持原有自动重置配置
+		DailyUsageEnabled:        currentConfig.DailyUsageEnabled, // 默认保持原有每日统计配置
+		AutoSchedule:             currentConfig.AutoSchedule,      // 默认保持原有自动调度配置
+		AutoReset:                currentConfig.AutoReset,         // 默认保持原有自动重置配置
 	}
 
 	// 如果请求中包含新的Cookie，则更新（使用指针判断是否设置了Cookie字段）
 	if requestConfig.Cookie != nil {
 		newConfig.Cookie = *requestConfig.Cookie
+	}
+
+	// 如果请求中包含每日积分统计配置，则更新
+	if requestConfig.DailyUsageEnabled != nil {
+		oldDailyUsageEnabled := currentConfig.DailyUsageEnabled
+		newConfig.DailyUsageEnabled = *requestConfig.DailyUsageEnabled
+		
+		log.Printf("[配置更新] 每日积分统计配置变更: %v -> %v", oldDailyUsageEnabled, newConfig.DailyUsageEnabled)
 	}
 
 	// 如果请求中包含自动调度配置，则更新
@@ -211,6 +220,7 @@ func (h *ConfigHandler) UpdateConfig(c *fiber.Ctx) error {
 	log.Printf("[配置更新] - 间隔: %d秒", newConfig.Interval)
 	log.Printf("[配置更新] - 时间范围: %d分钟", newConfig.TimeRange)
 	log.Printf("[配置更新] - 监控启用: %v", newConfig.Enabled)
+	log.Printf("[配置更新] - 每日积分统计: %v", newConfig.DailyUsageEnabled)
 	log.Printf("[配置更新] - 自动调度: %v", newConfig.AutoSchedule.Enabled)
 	log.Printf("[配置更新] - 自动重置: %v", newConfig.AutoReset.Enabled)
 
