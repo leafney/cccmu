@@ -183,7 +183,7 @@ func (c *ClaudeAPIClient) FetchCreditBalance() (*models.CreditBalance, error) {
 	}
 
 	// 添加调试日志（可控制）
-	utils.Logf("积分余额API原始响应: %s", string(resp.Body()))
+	// utils.Logf("积分余额API原始响应: %s", string(resp.Body()))
 
 	// 解析API返回的数据格式
 	var creditsResp ClaudeCreditsResponse
