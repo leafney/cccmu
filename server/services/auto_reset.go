@@ -17,22 +17,22 @@ import (
 
 // AutoResetService 自动重置服务
 type AutoResetService struct {
-	scheduler          gocron.Scheduler          // 时间任务调度器
-	resetJob           gocron.Job                // 重置任务
-	config             *models.AutoResetConfig   // 当前配置
-	db                 *database.BadgerDB        // 数据库访问
-	schedulerSvc       *SchedulerService         // 调度器服务（用于通知和重置）
-	mu                 sync.RWMutex              // 并发保护
-	tasksCreated       bool                      // 标记任务是否已创建
-	tasksRunning       bool                      // 标记任务是否正在运行
-	thresholdScheduler gocron.Scheduler          // 阈值检查专用调度器
-	thresholdJob       gocron.Job                // 阈值检查任务
-	thresholdRunning   bool                      // 阈值任务运行状态
-	apiClient          *client.ClaudeAPIClient   // API客户端实例
-	
+	scheduler          gocron.Scheduler        // 时间任务调度器
+	resetJob           gocron.Job              // 重置任务
+	config             *models.AutoResetConfig // 当前配置
+	db                 *database.BadgerDB      // 数据库访问
+	schedulerSvc       *SchedulerService       // 调度器服务（用于通知和重置）
+	mu                 sync.RWMutex            // 并发保护
+	tasksCreated       bool                    // 标记任务是否已创建
+	tasksRunning       bool                    // 标记任务是否正在运行
+	thresholdScheduler gocron.Scheduler        // 阈值检查专用调度器
+	thresholdJob       gocron.Job              // 阈值检查任务
+	thresholdRunning   bool                    // 阈值任务运行状态
+	apiClient          *client.ClaudeAPIClient // API客户端实例
+
 	// 动态时间范围管理
-	thresholdTimerJob  gocron.Job                // 时间范围管理任务
-	thresholdActive    bool                      // 当前是否在阈值检查时间范围内
+	thresholdTimerJob gocron.Job // 时间范围管理任务
+	thresholdActive   bool       // 当前是否在阈值检查时间范围内
 }
 
 // NewAutoResetService 创建自动重置服务
@@ -73,11 +73,11 @@ func (s *AutoResetService) UpdateConfig(config *models.AutoResetConfig) error {
 	utils.Logf("[自动重置] - 启用状态: %v", config.Enabled)
 	utils.Logf("[自动重置] - 时间触发条件: %v", config.TimeEnabled)
 	utils.Logf("[自动重置] - 阈值触发条件: %v", config.ThresholdEnabled)
-	
+
 	if config.Enabled && config.TimeEnabled && config.ResetTime != "" {
 		utils.Logf("[自动重置] - 重置时间: %s", config.ResetTime)
 	}
-	
+
 	if config.Enabled && config.ThresholdEnabled {
 		utils.Logf("[自动重置] - 积分阈值: %d", config.Threshold)
 		if config.ThresholdTimeEnabled && config.ThresholdStartTime != "" && config.ThresholdEndTime != "" {
@@ -93,8 +93,7 @@ func (s *AutoResetService) UpdateConfig(config *models.AutoResetConfig) error {
 	timeConfigChanged := oldConfig != nil && (oldConfig.TimeEnabled != config.TimeEnabled || oldConfig.ResetTime != config.ResetTime)
 
 	// 判断阈值触发配置是否变化
-	thresholdConfigChanged := oldConfig != nil && (
-		oldConfig.ThresholdEnabled != config.ThresholdEnabled ||
+	thresholdConfigChanged := oldConfig != nil && (oldConfig.ThresholdEnabled != config.ThresholdEnabled ||
 		oldConfig.Threshold != config.Threshold ||
 		oldConfig.ThresholdTimeEnabled != config.ThresholdTimeEnabled ||
 		oldConfig.ThresholdStartTime != config.ThresholdStartTime ||
@@ -363,34 +362,34 @@ func (s *AutoResetService) handleThresholdCheckTask() {
 	now := time.Now()
 	utils.Logf("[阈值触发] 🔍 执行阈值检查任务")
 	utils.Logf("[阈值触发]   ⏰ 检查时间: %s", now.Format("2006-01-02 15:04:05"))
-	
+
 	// 检查今日是否已重置
 	if s.isAlreadyReset() {
 		utils.Logf("[阈值触发] ✅ 今日已重置，任务目标达成，提前结束阈值检查")
 		s.deactivateThresholdCheck()
 		return
 	}
-	
+
 	// 获取积分余额（使用现有缓存逻辑）
 	balance, err := s.apiClient.FetchCreditBalance()
 	if err != nil {
 		utils.Logf("[阈值触发]   ❌ 获取积分余额失败: %v", err)
 		return
 	}
-	
+
 	utils.Logf("[阈值触发]   💰 当前积分余额: %d", balance.Remaining)
 	utils.Logf("[阈值触发]   🎯 设定阈值: %d", s.config.Threshold)
-	
+
 	// 通过SchedulerService推送积分到前端（SSE）
 	s.schedulerSvc.NotifyBalanceUpdate(balance)
 	utils.Logf("[阈值触发]   📡 已推送积分余额到前端")
-	
+
 	// 判断是否低于阈值
 	if balance.Remaining > s.config.Threshold {
 		utils.Logf("[阈值触发]   ✅ 积分余额充足，无需重置 (%d > %d)", balance.Remaining, s.config.Threshold)
 		return
 	}
-	
+
 	utils.Logf("[阈值触发]   🚨 积分余额低于阈值 (%d <= %d)，准备触发重置", balance.Remaining, s.config.Threshold)
 	s.executeAutoReset("threshold_trigger")
 }
@@ -400,7 +399,7 @@ func (s *AutoResetService) createThresholdJob() error {
 	utils.Logf("[阈值触发] 🔨 创建阈值检查任务")
 	utils.Logf("[阈值触发]   📋 检查间隔: 30秒")
 	utils.Logf("[阈值触发]   🎯 触发阈值: %d", s.config.Threshold)
-	
+
 	job, err := s.thresholdScheduler.NewJob(
 		gocron.DurationJob(30*time.Second),
 		gocron.NewTask(s.handleThresholdCheckTask),
@@ -410,7 +409,7 @@ func (s *AutoResetService) createThresholdJob() error {
 		utils.Logf("[阈值触发] ❌ 创建阈值检查任务失败: %v", err)
 		return err
 	}
-	
+
 	s.thresholdJob = job
 	utils.Logf("[阈值触发] ✅ 阈值检查任务创建成功, ID: %v", job.ID())
 	return nil
@@ -420,7 +419,7 @@ func (s *AutoResetService) createThresholdJob() error {
 func (s *AutoResetService) startThresholdTask() error {
 	utils.Logf("[阈值触发] 🚀 启动阈值检查任务")
 	utils.Logf("[阈值触发]   🎯 阈值设置: %d", s.config.Threshold)
-	
+
 	// 获取API客户端实例
 	config, err := s.db.GetConfig()
 	if err != nil {
@@ -428,7 +427,7 @@ func (s *AutoResetService) startThresholdTask() error {
 		return err
 	}
 	s.apiClient = client.NewClaudeAPIClient(config.Cookie)
-	
+
 	if s.config.ThresholdTimeEnabled {
 		utils.Logf("[阈值触发]   📅 时间范围: %s-%s", s.config.ThresholdStartTime, s.config.ThresholdEndTime)
 		// 启动时间范围管理任务
@@ -442,11 +441,11 @@ func (s *AutoResetService) startThresholdTask() error {
 			return err
 		}
 	}
-	
+
 	// 启动调度器
 	s.thresholdScheduler.Start()
 	s.thresholdRunning = true
-	
+
 	utils.Logf("[阈值触发] ✅ 阈值检查任务已启动")
 	return nil
 }
@@ -454,20 +453,20 @@ func (s *AutoResetService) startThresholdTask() error {
 // stopThresholdTask 停止阈值检查任务（采用彻底清理策略）
 func (s *AutoResetService) stopThresholdTask() {
 	utils.Logf("[阈值触发] 🔴 停止阈值检查任务 (彻底清理所有相关任务)")
-	
+
 	if s.thresholdRunning {
 		// 停用阈值检查任务
 		if s.thresholdActive {
 			s.removeThresholdCheckTask()
 		}
-		
+
 		// 完全停止并关闭调度器，确保所有任务都被清理
 		utils.Logf("[阈值触发] 🗑️  完全清理阈值调度器")
 		s.thresholdScheduler.StopJobs()
 		if err := s.thresholdScheduler.Shutdown(); err != nil {
 			utils.Logf("[阈值触发] ❌ 关闭阈值调度器失败: %v", err)
 		}
-		
+
 		// 重新创建调度器以确保完全清理
 		newScheduler, err := gocron.NewScheduler()
 		if err != nil {
@@ -476,16 +475,16 @@ func (s *AutoResetService) stopThresholdTask() {
 			s.thresholdScheduler = newScheduler
 			utils.Logf("[阈值触发] ✅ 阈值调度器已重新创建")
 		}
-		
+
 		// 清理所有任务引用
 		s.thresholdJob = nil
 		s.thresholdTimerJob = nil
 		s.thresholdRunning = false
 		s.thresholdActive = false
-		
+
 		utils.Logf("[阈值触发] ⏹️  阈值检查任务已完全停止")
 	}
-	
+
 	utils.Logf("[阈值触发] ✅ 阈值检查任务已停止")
 }
 
@@ -502,7 +501,7 @@ func (s *AutoResetService) stopThresholdTaskInternal() {
 // startTimeRangeManager 启动时间范围管理任务
 func (s *AutoResetService) startTimeRangeManager() error {
 	utils.Logf("[阈值触发] 🕐 启动时间范围管理器")
-	
+
 	// 创建每分钟检查的定时任务来管理时间范围
 	job, err := s.thresholdScheduler.NewJob(
 		gocron.DurationJob(1*time.Minute),
@@ -513,13 +512,13 @@ func (s *AutoResetService) startTimeRangeManager() error {
 		utils.Logf("[阈值触发] ❌ 创建时间范围管理任务失败: %v", err)
 		return err
 	}
-	
+
 	s.thresholdTimerJob = job
 	utils.Logf("[阈值触发] ✅ 时间范围管理任务创建成功, ID: %v", job.ID())
-	
+
 	// 立即检查当前时间是否在范围内
 	s.manageTimeRange()
-	
+
 	return nil
 }
 
@@ -530,16 +529,16 @@ func (s *AutoResetService) manageTimeRange() {
 		utils.Logf("[阈值触发] ⚠️  阈值任务已停用，跳过时间范围检查")
 		return
 	}
-	
+
 	now := time.Now()
 	inRange := s.config.IsInThresholdTimeRange(now)
-	
+
 	utils.Logf("[阈值触发] 🕐 检查时间范围状态")
 	utils.Logf("[阈值触发]   ⏰ 当前时间: %s", now.Format("15:04:05"))
 	utils.Logf("[阈值触发]   📅 检查范围: %s-%s", s.config.ThresholdStartTime, s.config.ThresholdEndTime)
 	utils.Logf("[阈值触发]   🔍 当前活跃: %v", s.thresholdActive)
 	utils.Logf("[阈值触发]   🎯 在范围内: %v", inRange)
-	
+
 	if inRange && !s.thresholdActive {
 		// 进入时间范围，启动阈值检查
 		utils.Logf("[阈值触发] 🟢 进入检查时间范围，启动阈值检查任务")
@@ -563,28 +562,28 @@ func (s *AutoResetService) activateThresholdCheck() error {
 		utils.Logf("[阈值触发] ⚠️  阈值检查已经激活，跳过")
 		return nil
 	}
-	
+
 	// 检查今日是否已重置，如果已重置则无需创建检查任务
 	if s.isAlreadyReset() {
 		utils.Logf("[阈值触发] ⚠️  今日已重置过，跳过阈值检查任务创建")
 		utils.Logf("[阈值触发] 📋 任务目标已达成，无需继续检查")
 		return nil
 	}
-	
+
 	utils.Logf("[阈值触发] 🔨 创建30秒阈值检查任务")
-	
+
 	// 创建30秒定时检查任务
 	if err := s.createThresholdJob(); err != nil {
 		return err
 	}
-	
+
 	// 启动阈值检查时暂停SchedulerService积分获取任务（整个检查期间）
 	utils.Logf("[阈值触发] ⏸️  暂停SchedulerService积分获取任务 (整个检查期间)")
 	s.schedulerSvc.PauseBalanceTask()
-	
+
 	s.thresholdActive = true
 	utils.Logf("[阈值触发] ✅ 阈值检查任务已激活")
-	
+
 	return nil
 }
 
@@ -594,9 +593,9 @@ func (s *AutoResetService) removeThresholdCheckTask() {
 		utils.Logf("[阈值触发] ⚠️  阈值检查已经停用，跳过")
 		return
 	}
-	
+
 	utils.Logf("[阈值触发] 🗑️  移除阈值检查任务")
-	
+
 	// 移除阈值检查任务
 	if s.thresholdJob != nil {
 		if err := s.thresholdScheduler.RemoveJob(s.thresholdJob.ID()); err != nil {
@@ -606,7 +605,7 @@ func (s *AutoResetService) removeThresholdCheckTask() {
 		}
 		s.thresholdJob = nil
 	}
-	
+
 	// 移除时间范围管理任务
 	if s.thresholdTimerJob != nil {
 		if err := s.thresholdScheduler.RemoveJob(s.thresholdTimerJob.ID()); err != nil {
@@ -616,11 +615,11 @@ func (s *AutoResetService) removeThresholdCheckTask() {
 		}
 		s.thresholdTimerJob = nil
 	}
-	
+
 	// 恢复SchedulerService积分获取任务（采用重建策略）
 	utils.Logf("[阈值触发] ▶️  恢复SchedulerService积分获取任务 (阈值检查已结束)")
 	s.schedulerSvc.RebuildBalanceTask()
-	
+
 	s.thresholdActive = false
 	utils.Logf("[阈值触发] ⏹️  阈值检查任务已停用")
 }
@@ -649,7 +648,7 @@ func (s *AutoResetService) executeAutoReset(trigger string) {
 	success := s.callExistingResetAPI()
 	if success {
 		utils.Logf("[自动重置] ✅ 自动重置执行成功")
-		
+
 		// 如果是阈值触发，延迟获取最新积分确认重置效果
 		if trigger == "threshold_trigger" {
 			go func() {

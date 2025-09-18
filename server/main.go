@@ -142,7 +142,7 @@ func main() {
 	if autoResetService == nil {
 		log.Fatalf("初始化自动重置服务失败")
 	}
-	
+
 	// 设置互相引用，用于任务协调
 	scheduler.SetAutoResetService(autoResetService)
 	defer func() {

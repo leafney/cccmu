@@ -37,12 +37,12 @@ type SessionEventHandler func(event SessionEvent)
 
 // Manager 认证管理器
 type Manager struct {
-	authKey       string
-	sessions      sync.Map
+	authKey        string
+	sessions       sync.Map
 	expireDuration time.Duration
-	authFilePath  string
-	eventHandlers []SessionEventHandler
-	eventMutex    sync.RWMutex
+	authFilePath   string
+	eventHandlers  []SessionEventHandler
+	eventMutex     sync.RWMutex
 }
 
 // NewManager 创建认证管理器
@@ -51,15 +51,15 @@ func NewManager(expireDuration time.Duration) *Manager {
 		expireDuration: expireDuration,
 		authFilePath:   ".auth",
 	}
-	
+
 	// 加载或生成认证密钥
 	if err := manager.loadOrGenerateAuthKey(); err != nil {
 		log.Fatalf("初始化认证密钥失败: %v", err)
 	}
-	
+
 	// 启动定时清理器
 	go manager.startSessionCleaner()
-	
+
 	return manager
 }
 
@@ -72,12 +72,12 @@ func (m *Manager) loadOrGenerateAuthKey() error {
 		if err != nil {
 			return fmt.Errorf("生成随机密钥失败: %v", err)
 		}
-		
+
 		// 保存到文件
 		if err := m.saveAuthKey(key); err != nil {
 			return fmt.Errorf("保存认证密钥失败: %v", err)
 		}
-		
+
 		m.authKey = key
 		fmt.Printf("🔑 访问密钥: %s\n", key)
 		fmt.Printf("💡 密钥已保存到 %s 文件\n", m.authFilePath)
@@ -87,11 +87,11 @@ func (m *Manager) loadOrGenerateAuthKey() error {
 		if err != nil {
 			return fmt.Errorf("加载认证密钥失败: %v", err)
 		}
-		
+
 		m.authKey = key
 		fmt.Printf("🔑 当前访问密钥: %s\n", key)
 	}
-	
+
 	return nil
 }
 
@@ -111,7 +111,7 @@ func (m *Manager) saveAuthKey(key string) error {
 		return err
 	}
 	defer file.Close()
-	
+
 	_, err = file.WriteString(key)
 	return err
 }
@@ -136,16 +136,16 @@ func (m *Manager) CreateSession() (*Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("生成会话ID失败: %v", err)
 	}
-	
+
 	session := &Session{
 		ID:        sessionID,
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(m.expireDuration),
 	}
-	
+
 	m.sessions.Store(sessionID, session)
 	log.Printf("创建新会话: %s, 过期时间: %s", sessionID[:8]+"...", session.ExpiresAt.Format("2006-01-02 15:04:05"))
-	
+
 	return session, nil
 }
 
@@ -154,17 +154,17 @@ func (m *Manager) ValidateSession(sessionID string) (*Session, bool) {
 	if sessionID == "" {
 		return nil, false
 	}
-	
+
 	value, ok := m.sessions.Load(sessionID)
 	if !ok {
 		return nil, false
 	}
-	
+
 	session, ok := value.(*Session)
 	if !ok {
 		return nil, false
 	}
-	
+
 	// 检查是否过期
 	if time.Now().After(session.ExpiresAt) {
 		m.sessions.Delete(sessionID)
@@ -176,7 +176,7 @@ func (m *Manager) ValidateSession(sessionID string) (*Session, bool) {
 		})
 		return nil, false
 	}
-	
+
 	return session, true
 }
 
@@ -209,7 +209,7 @@ func (m *Manager) fireSessionEvent(event SessionEvent) {
 	handlers := make([]SessionEventHandler, len(m.eventHandlers))
 	copy(handlers, m.eventHandlers)
 	m.eventMutex.RUnlock()
-	
+
 	for _, handler := range handlers {
 		go handler(event) // 异步调用处理器，避免阻塞
 	}
@@ -219,7 +219,7 @@ func (m *Manager) fireSessionEvent(event SessionEvent) {
 func (m *Manager) startSessionCleaner() {
 	ticker := time.NewTicker(1 * time.Hour) // 每小时清理一次
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-ticker.C:
@@ -232,21 +232,21 @@ func (m *Manager) startSessionCleaner() {
 func (m *Manager) cleanExpiredSessions() {
 	now := time.Now()
 	count := 0
-	
+
 	m.sessions.Range(func(key, value interface{}) bool {
 		session, ok := value.(*Session)
 		if !ok {
 			return true
 		}
-		
+
 		if now.After(session.ExpiresAt) {
 			m.sessions.Delete(key)
 			count++
 		}
-		
+
 		return true
 	})
-	
+
 	if count > 0 {
 		log.Printf("清理了 %d 个过期会话", count)
 	}

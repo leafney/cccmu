@@ -28,10 +28,10 @@ func NewSSEHandler(db *database.BadgerDB, scheduler *services.SchedulerService, 
 		scheduler:   scheduler,
 		authManager: authManager,
 	}
-	
+
 	// 注册会话事件监听器
 	authManager.AddSessionEventHandler(handler.handleSessionEvent)
-	
+
 	return handler
 }
 
@@ -61,13 +61,13 @@ func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
 	c.Set("Connection", "keep-alive")
 	c.Set("Access-Control-Allow-Origin", "*")
 	c.Set("Access-Control-Allow-Headers", "Cache-Control")
-	
+
 	// 获取查询参数（在流式响应外获取）
 	minutes := c.QueryInt("minutes", 60)
 	if minutes <= 0 {
 		minutes = 60
 	}
-	
+
 	// 获取上下文，避免在goroutine中访问可能已释放的context
 	ctx := c.Context()
 
@@ -80,7 +80,7 @@ func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
 		// 立即发送当前数据
 		allData := h.scheduler.GetLatestData()
 		filteredData := models.UsageDataList(allData).FilterByTimeRange(minutes)
-		
+
 		if len(filteredData) > 0 {
 			jsonData, err := json.Marshal(filteredData)
 			if err != nil {
@@ -117,10 +117,10 @@ func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
 
 		// 立即发送当前监控状态和自动调度状态
 		statusData := map[string]any{
-			"type":                 "monitoring_status",
-			"isMonitoring":         h.scheduler.IsRunning(),
-			"autoScheduleEnabled":  h.scheduler.IsAutoScheduleEnabled(),
-			"autoScheduleActive":   h.scheduler.IsInAutoScheduleTimeRange(),
+			"type":                "monitoring_status",
+			"isMonitoring":        h.scheduler.IsRunning(),
+			"autoScheduleEnabled": h.scheduler.IsAutoScheduleEnabled(),
+			"autoScheduleActive":  h.scheduler.IsInAutoScheduleTimeRange(),
 			"timestamp":           time.Now().Format(time.RFC3339),
 		}
 		jsonData, err := json.Marshal(statusData)
@@ -157,7 +157,7 @@ func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
 
 				// 按时间范围过滤数据后发送
 				filteredData := models.UsageDataList(data).FilterByTimeRange(minutes)
-				
+
 				if len(filteredData) > 0 {
 					jsonData, err := json.Marshal(filteredData)
 					if err != nil {
@@ -227,10 +227,10 @@ func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
 			case <-autoScheduleListener:
 				// 自动调度状态变化，发送完整的监控状态
 				statusData := map[string]any{
-					"type":                 "monitoring_status",
-					"isMonitoring":         h.scheduler.IsRunning(),
-					"autoScheduleEnabled":  h.scheduler.IsAutoScheduleEnabled(),
-					"autoScheduleActive":   h.scheduler.IsInAutoScheduleTimeRange(),
+					"type":                "monitoring_status",
+					"isMonitoring":        h.scheduler.IsRunning(),
+					"autoScheduleEnabled": h.scheduler.IsAutoScheduleEnabled(),
+					"autoScheduleActive":  h.scheduler.IsInAutoScheduleTimeRange(),
 					"timestamp":           time.Now().Format(time.RFC3339),
 				}
 				jsonData, err := json.Marshal(statusData)
@@ -281,7 +281,6 @@ func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
 
 	return nil
 }
-
 
 // GetUsageData 获取历史数据
 func (h *SSEHandler) GetUsageData(c *fiber.Ctx) error {

@@ -12,35 +12,35 @@ import (
 func AuthMiddleware(authManager *auth.Manager) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		path := c.Path()
-		
+
 		// 跳过认证API路径
 		if strings.HasPrefix(path, "/api/auth/") {
 			return c.Next()
 		}
-		
+
 		// 跳过静态文件
-		if strings.HasPrefix(path, "/static/") || 
-		   strings.HasPrefix(path, "/assets/") ||
-		   path == "/favicon.ico" ||
-		   path == "/" {
+		if strings.HasPrefix(path, "/static/") ||
+			strings.HasPrefix(path, "/assets/") ||
+			path == "/favicon.ico" ||
+			path == "/" {
 			return c.Next()
 		}
-		
+
 		// 获取session cookie
 		sessionID := c.Cookies("cccmu_session")
 		if sessionID == "" {
 			return c.Status(401).JSON(models.Error(401, "未授权访问", nil))
 		}
-		
+
 		// 验证session
 		session, valid := authManager.ValidateSession(sessionID)
 		if !valid {
 			return c.Status(401).JSON(models.Error(401, "会话无效或已过期", nil))
 		}
-		
+
 		// 将session信息存储到context中
 		c.Locals("session", session)
-		
+
 		return c.Next()
 	}
 }
