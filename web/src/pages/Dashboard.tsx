@@ -579,9 +579,9 @@ export function Dashboard() {
             </div>
 
             {/* 中列 - 历史统计按钮组 */}
-            <div className="flex flex-col space-y-1.5">
-              {/* 历史统计按钮 */}
-              {config?.dailyUsageEnabled && (
+            {config?.dailyUsageEnabled && (
+              <div className="flex flex-col space-y-1.5">
+                {/* 历史统计按钮 */}
                 <button
                   onClick={async () => {
                     try {
@@ -599,11 +599,11 @@ export function Dashboard() {
                 >
                   <History className="w-3.5 h-3.5" />
                 </button>
-              )}
-              
-              {/* 预留位置 - 备用按钮 */}
-              <div className="w-[20px] h-[20px]"></div>
-            </div>
+                
+                {/* 预留位置 - 备用按钮 */}
+                <div className="w-[20px] h-[20px]"></div>
+              </div>
+            )}
 
             {/* 右列 - 功能按钮组 */}
             <div className="flex flex-col space-y-1.5">

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -13,40 +14,110 @@ import (
 
 // DailyUsageTracker 每日积分使用量跟踪服务
 type DailyUsageTracker struct {
-	db        *database.BadgerDB
-	apiClient *client.ClaudeAPIClient
-	scheduler gocron.Scheduler
-	isRunning bool
-	mu        sync.RWMutex
+	db           *database.BadgerDB
+	apiClient    *client.ClaudeAPIClient
+	parentSched  gocron.Scheduler // 使用主调度器
+	job          gocron.Job       // 定时任务引用
+	isActive     bool             // 任务是否激活状态
+	isInitialized bool            // 是否已初始化
+	mu           sync.RWMutex
 }
 
 // NewDailyUsageTracker 创建每日积分跟踪服务
 func NewDailyUsageTracker(db *database.BadgerDB, apiClient *client.ClaudeAPIClient) (*DailyUsageTracker, error) {
-	scheduler, err := gocron.NewScheduler()
-	if err != nil {
-		return nil, err
-	}
-
 	return &DailyUsageTracker{
-		db:        db,
-		apiClient: apiClient,
-		scheduler: scheduler,
-		isRunning: false,
+		db:            db,
+		apiClient:     apiClient,
+		parentSched:   nil, // 将在初始化时设置
+		job:           nil,
+		isActive:      false,
+		isInitialized: false,
 	}, nil
 }
 
-// Start 启动每日积分统计任务
-func (d *DailyUsageTracker) Start() error {
+// Initialize 使用主调度器初始化服务
+func (d *DailyUsageTracker) Initialize(parentScheduler gocron.Scheduler) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	if d.isRunning {
-		utils.Logf("[每日积分统计] 服务已在运行，跳过启动")
+	if d.isInitialized {
+		utils.Logf("[每日积分统计] 服务已初始化，跳过操作")
 		return nil
 	}
 
-	// 创建每小时执行的定时任务
-	job, err := d.scheduler.NewJob(
+	d.parentSched = parentScheduler
+	d.isInitialized = true
+	utils.Logf("[每日积分统计] ✅ 服务已初始化")
+	
+	// 计算下次执行时间（下一个整点）并显示提示
+	now := time.Now()
+	nextRun := now.Truncate(time.Hour).Add(time.Hour)
+	utils.Logf("[每日积分统计] ⏰ 执行间隔: 每小时整点")
+	utils.Logf("[每日积分统计] 🕐 下次执行: %s", nextRun.Format("2006-01-02 15:04:05"))
+
+	return nil
+}
+
+// Shutdown 完全关闭服务（程序退出时调用）
+func (d *DailyUsageTracker) Shutdown() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if !d.isInitialized {
+		utils.Logf("[每日积分统计] 服务未初始化，跳过关闭")
+		return nil
+	}
+
+	utils.Logf("[每日积分统计] 🛑 开始关闭服务...")
+
+	// 移除任务（如果存在）
+	if d.job != nil && d.parentSched != nil {
+		if err := d.parentSched.RemoveJob(d.job.ID()); err != nil {
+			utils.Logf("[每日积分统计] ⚠️  移除任务失败: %v", err)
+		} else {
+			utils.Logf("[每日积分统计] ✅ 任务已移除")
+		}
+		d.job = nil
+	}
+
+	d.isActive = false
+	d.isInitialized = false
+	d.parentSched = nil
+	utils.Logf("[每日积分统计] ✅ 服务已完全关闭")
+
+	return nil
+}
+
+// IsInitialized 检查服务是否已初始化
+func (d *DailyUsageTracker) IsInitialized() bool {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.isInitialized
+}
+
+// IsActive 检查定时任务是否激活状态
+func (d *DailyUsageTracker) IsActive() bool {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.isActive
+}
+
+// Activate 激活定时任务
+func (d *DailyUsageTracker) Activate() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if !d.isInitialized {
+		return fmt.Errorf("服务未初始化，无法激活任务")
+	}
+
+	if d.isActive {
+		utils.Logf("[每日积分统计] 任务已激活，跳过操作")
+		return nil
+	}
+
+	// 创建新的定时任务
+	job, err := d.parentSched.NewJob(
 		gocron.CronJob("0 * * * *", false), // 每小时整点执行
 		gocron.NewTask(d.collectHourlyUsage),
 		gocron.WithSingletonMode(gocron.LimitModeReschedule),
@@ -56,16 +127,14 @@ func (d *DailyUsageTracker) Start() error {
 		return err
 	}
 
-	// 启动调度器
-	d.scheduler.Start()
-	d.isRunning = true
-
-	// 计算下次执行时间（下一个整点）
+	d.job = job
+	d.isActive = true
+	utils.Logf("[每日积分统计] ✅ 任务已激活")
+	utils.Logf("[每日积分统计] 📋 任务ID: %v", job.ID())
+	
+	// 计算下次执行时间
 	now := time.Now()
 	nextRun := now.Truncate(time.Hour).Add(time.Hour)
-	utils.Logf("[每日积分统计] ✅ 服务已启动")
-	utils.Logf("[每日积分统计] 📋 任务ID: %v", job.ID())
-	utils.Logf("[每日积分统计] ⏰ 执行间隔: 每小时整点")
 	utils.Logf("[每日积分统计] 🕐 下次执行: %s", nextRun.Format("2006-01-02 15:04:05"))
 
 	// 立即执行一次统计任务
@@ -80,41 +149,31 @@ func (d *DailyUsageTracker) Start() error {
 	return nil
 }
 
-// Stop 停止每日积分统计任务
-func (d *DailyUsageTracker) Stop() error {
+// Deactivate 停止定时任务
+func (d *DailyUsageTracker) Deactivate() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	if !d.isRunning {
-		utils.Logf("[每日积分统计] 服务未运行，跳过停止")
+	if !d.isActive {
+		utils.Logf("[每日积分统计] 任务已停止，跳过操作")
 		return nil
 	}
 
-	utils.Logf("[每日积分统计] 🛑 开始停止服务...")
-
-	if err := d.scheduler.StopJobs(); err != nil {
-		utils.Logf("[每日积分统计] ❌ 停止任务失败: %v", err)
-	} else {
-		utils.Logf("[每日积分统计] ✅ 所有任务已停止")
+	// 移除任务
+	if d.job != nil && d.parentSched != nil {
+		if err := d.parentSched.RemoveJob(d.job.ID()); err != nil {
+			utils.Logf("[每日积分统计] ⚠️  移除任务失败: %v", err)
+			// 不返回错误，继续执行
+		} else {
+			utils.Logf("[每日积分统计] ✅ 任务已移除")
+		}
+		d.job = nil
 	}
 
-	if err := d.scheduler.Shutdown(); err != nil {
-		utils.Logf("[每日积分统计] ❌ 关闭调度器失败: %v", err)
-	} else {
-		utils.Logf("[每日积分统计] ✅ 调度器已关闭")
-	}
-
-	d.isRunning = false
-	utils.Logf("[每日积分统计] ✅ 服务已完全停止")
+	d.isActive = false
+	utils.Logf("[每日积分统计] ✅ 任务已停止")
 
 	return nil
-}
-
-// IsRunning 检查服务是否运行中
-func (d *DailyUsageTracker) IsRunning() bool {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-	return d.isRunning
 }
 
 // collectHourlyUsage 收集最近一小时的积分使用量
