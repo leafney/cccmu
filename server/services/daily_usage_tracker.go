@@ -47,7 +47,7 @@ func (d *DailyUsageTracker) Start() error {
 
 	// 创建每小时执行的定时任务
 	job, err := d.scheduler.NewJob(
-		gocron.DurationJob(time.Hour), // 每1小时执行一次
+		gocron.CronJob("0 * * * *", false), // 每小时整点执行
 		gocron.NewTask(d.collectHourlyUsage),
 		gocron.WithSingletonMode(gocron.LimitModeReschedule),
 	)
@@ -60,11 +60,12 @@ func (d *DailyUsageTracker) Start() error {
 	d.scheduler.Start()
 	d.isRunning = true
 
-	// 计算下次执行时间
-	nextRun := time.Now().Add(time.Hour).Truncate(time.Hour)
+	// 计算下次执行时间（下一个整点）
+	now := time.Now()
+	nextRun := now.Truncate(time.Hour).Add(time.Hour)
 	utils.Logf("[每日积分统计] ✅ 服务已启动")
 	utils.Logf("[每日积分统计] 📋 任务ID: %v", job.ID())
-	utils.Logf("[每日积分统计] ⏰ 执行间隔: 每1小时")
+	utils.Logf("[每日积分统计] ⏰ 执行间隔: 每小时整点")
 	utils.Logf("[每日积分统计] 🕐 下次执行: %s", nextRun.Format("2006-01-02 15:04:05"))
 
 	// 立即执行一次统计任务
@@ -143,8 +144,8 @@ func (d *DailyUsageTracker) collectHourlyUsage() error {
 	var recordCount int
 	var oldestRecord, newestRecord time.Time
 
-	utils.Logf("[每日积分统计] 🔍 分析时间范围: %s 至 %s (UTC)", 
-		oneHourAgo.Format("15:04:05"), time.Now().UTC().Format("15:04:05"))
+	utils.Logf("[每日积分统计] 🔍 分析时间范围: %s 至 %s",
+		oneHourAgo.In(time.Local).Format("15:04:05"), time.Now().Format("15:04:05"))
 
 	for _, data := range usageData {
 		if recordCount == 0 {
@@ -167,8 +168,8 @@ func (d *DailyUsageTracker) collectHourlyUsage() error {
 	}
 
 	if totalRecords > 0 {
-		utils.Logf("[每日积分统计] 📅 数据时间范围: %s ~ %s (UTC)", 
-			oldestRecord.Format("15:04:05"), newestRecord.Format("15:04:05"))
+		utils.Logf("[每日积分统计] 📅 数据时间范围: %s 至 %s",
+			oldestRecord.In(time.Local).Format("15:04:05"), newestRecord.In(time.Local).Format("15:04:05"))
 	}
 
 	utils.Logf("[每日积分统计] 📊 过滤结果: %d/%d 条记录在统计时间范围内", recordCount, totalRecords)
@@ -180,7 +181,7 @@ func (d *DailyUsageTracker) collectHourlyUsage() error {
 
 	// 获取当前本地日期
 	localDate := models.GetLocalDate(time.Now())
-	utils.Logf("[每日积分统计] 📅 目标日期: %s (本地时间)", localDate)
+	utils.Logf("[每日积分统计] 📅 目标日期: %s", localDate)
 
 	// 获取保存前的当日统计（用于计算累加）
 	beforeUsage, _ := d.db.GetDailyUsage(localDate)
@@ -199,12 +200,17 @@ func (d *DailyUsageTracker) collectHourlyUsage() error {
 	afterCredits := beforeCredits + hourlyCredits
 	elapsedTime := time.Since(startTime)
 
-	utils.Logf("[每日积分统计] ✅ 统计完成")
-	utils.Logf("[每日积分统计] 📋 日期: %s", localDate)
-	utils.Logf("[每日积分统计] 🆕 本次积分: +%d", hourlyCredits)
-	utils.Logf("[每日积分统计] 📊 记录数: %d", recordCount)
-	utils.Logf("[每日积分统计] 📈 累计积分: %d → %d", beforeCredits, afterCredits)
-	utils.Logf("[每日积分统计] ⏱️  执行耗时: %v", elapsedTime)
+	// 计算统计时间范围
+	endTime := time.Now()
+	utils.Logf("[每日积分统计] ✅ 日期 %s %s ~ %s 共统计 %d 条数据，积分 %d，积分变动 %d → %d，(耗时 %v)", 
+		localDate, 
+		oneHourAgo.In(time.Local).Format("15:04:05"), 
+		endTime.Format("15:04:05"),
+		recordCount, 
+		hourlyCredits, 
+		beforeCredits, 
+		afterCredits, 
+		elapsedTime)
 
 	// 执行数据清理任务（保留7天数据）
 	utils.Logf("[每日积分统计] 🧹 开始清理过期数据...")
@@ -215,8 +221,9 @@ func (d *DailyUsageTracker) collectHourlyUsage() error {
 		utils.Logf("[每日积分统计] ✅ 过期数据清理完成")
 	}
 
-	// 计算下次执行时间
-	nextRun := time.Now().Add(time.Hour).Truncate(time.Hour)
+	// 计算下次执行时间（下一个整点）
+	now := time.Now()
+	nextRun := now.Truncate(time.Hour).Add(time.Hour)
 	utils.Logf("[每日积分统计] 🕐 下次执行时间: %s", nextRun.Format("2006-01-02 15:04:05"))
 
 	return nil
@@ -237,7 +244,7 @@ func (d *DailyUsageTracker) GetWeeklyUsage() (models.DailyUsageList, error) {
 
 	// 确保返回完整的7天数据（包括缺失的日期）
 	completeList := usageList.FillMissingDates()
-	
+
 	// 计算统计信息
 	var totalCredits int
 	var activeDays int
@@ -252,7 +259,7 @@ func (d *DailyUsageTracker) GetWeeklyUsage() (models.DailyUsageList, error) {
 	utils.Logf("[每日积分统计] 📅 数据天数: %d天", len(completeList))
 	utils.Logf("[每日积分统计] 📊 活跃天数: %d天", activeDays)
 	utils.Logf("[每日积分统计] 🔢 总积分: %d", totalCredits)
-	
+
 	if activeDays > 0 {
 		avgCredits := totalCredits / activeDays
 		utils.Logf("[每日积分统计] 📊 平均每活跃日: %d积分", avgCredits)
@@ -260,7 +267,6 @@ func (d *DailyUsageTracker) GetWeeklyUsage() (models.DailyUsageList, error) {
 
 	return completeList, nil
 }
-
 
 // GetTodayUsage 获取今日积分使用统计
 func (d *DailyUsageTracker) GetTodayUsage() (*models.DailyUsage, error) {
