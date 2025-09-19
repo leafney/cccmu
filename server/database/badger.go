@@ -329,6 +329,62 @@ func (b *BadgerDB) SaveDailyUsage(date string, credits int) error {
 	})
 }
 
+// SaveDailyUsageWithModels 保存或累加每日积分使用统计（支持按模型分组）
+func (b *BadgerDB) SaveDailyUsageWithModels(date string, credits int, modelCredits map[string]int) error {
+	return b.db.Update(func(txn *badger.Txn) error {
+		key := []byte(models.GetDailyUsageKey(date))
+		
+		// 尝试获取现有数据
+		var currentUsage models.DailyUsage
+		item, err := txn.Get(key)
+		if err != nil && err != badger.ErrKeyNotFound {
+			return err
+		}
+		
+		if err == badger.ErrKeyNotFound {
+			// 不存在，创建新记录
+			currentUsage = models.DailyUsage{
+				Date:         date,
+				TotalCredits: credits,
+				ModelCredits: make(map[string]int),
+			}
+			// 复制模型积分数据
+			for model, modelCredit := range modelCredits {
+				currentUsage.ModelCredits[model] = modelCredit
+			}
+		} else {
+			// 存在，累加积分
+			err = item.Value(func(val []byte) error {
+				return json.Unmarshal(val, &currentUsage)
+			})
+			if err != nil {
+				return err
+			}
+			
+			// 确保 ModelCredits 字段不为 nil
+			if currentUsage.ModelCredits == nil {
+				currentUsage.ModelCredits = make(map[string]int)
+			}
+			
+			// 累加总积分
+			currentUsage.TotalCredits += credits
+			
+			// 按模型累加积分
+			for model, modelCredit := range modelCredits {
+				currentUsage.ModelCredits[model] += modelCredit
+			}
+		}
+		
+		// 保存数据
+		data, err := json.Marshal(currentUsage)
+		if err != nil {
+			return err
+		}
+		
+		return txn.Set(key, data)
+	})
+}
+
 // GetDailyUsage 获取指定日期的积分使用统计
 func (b *BadgerDB) GetDailyUsage(date string) (*models.DailyUsage, error) {
 	var usage *models.DailyUsage
@@ -349,6 +405,11 @@ func (b *BadgerDB) GetDailyUsage(date string) (*models.DailyUsage, error) {
 		})
 		return err
 	})
+	
+	// 确保 ModelCredits 字段不为 nil（兼容旧数据）
+	if usage != nil && usage.ModelCredits == nil {
+		usage.ModelCredits = make(map[string]int)
+	}
 	
 	return usage, err
 }
@@ -371,6 +432,7 @@ func (b *BadgerDB) GetWeeklyUsage() (models.DailyUsageList, error) {
 					usageList = append(usageList, models.DailyUsage{
 						Date:         date,
 						TotalCredits: 0,
+						ModelCredits: make(map[string]int),
 					})
 					continue
 				}
@@ -384,6 +446,11 @@ func (b *BadgerDB) GetWeeklyUsage() (models.DailyUsageList, error) {
 			if err != nil {
 				log.Printf("解析每日使用统计失败 %s: %v", key, err)
 				continue
+			}
+			
+			// 确保 ModelCredits 字段不为 nil（兼容旧数据）
+			if usage.ModelCredits == nil {
+				usage.ModelCredits = make(map[string]int)
 			}
 			
 			usageList = append(usageList, usage)

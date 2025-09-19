@@ -7,8 +7,9 @@ import (
 
 // DailyUsage 每日积分使用统计
 type DailyUsage struct {
-	Date         string `json:"date"`         // 日期 (YYYY-MM-DD)
-	TotalCredits int    `json:"totalCredits"` // 当日总积分使用量
+	Date         string         `json:"date"`         // 日期 (YYYY-MM-DD)
+	TotalCredits int            `json:"totalCredits"` // 当日总积分使用量
+	ModelCredits map[string]int `json:"modelCredits"` // 按模型分组的积分使用量
 }
 
 // DailyUsageList 每日使用统计数据列表
@@ -120,9 +121,63 @@ func (d DailyUsageList) FillMissingDates() DailyUsageList {
 			result[i] = DailyUsage{
 				Date:         date,
 				TotalCredits: 0,
+				ModelCredits: make(map[string]int),
 			}
 		}
 	}
 	
 	return result
+}
+
+// GetModelList 获取某日使用的模型列表
+func (d *DailyUsage) GetModelList() []string {
+	if d.ModelCredits == nil {
+		return []string{}
+	}
+	
+	models := make([]string, 0, len(d.ModelCredits))
+	for model := range d.ModelCredits {
+		if d.ModelCredits[model] > 0 {
+			models = append(models, model)
+		}
+	}
+	return models
+}
+
+// GetModelCredits 获取特定模型的积分使用量
+func (d *DailyUsage) GetModelCredits(model string) int {
+	if d.ModelCredits == nil {
+		return 0
+	}
+	return d.ModelCredits[model]
+}
+
+// AddModelCredits 累加指定模型的积分使用量
+func (d *DailyUsage) AddModelCredits(model string, credits int) {
+	if d.ModelCredits == nil {
+		d.ModelCredits = make(map[string]int)
+	}
+	d.ModelCredits[model] += credits
+	d.TotalCredits += credits
+}
+
+// GetAllModelList 获取所有天数中使用过的模型列表（用于前端图表）
+func (d DailyUsageList) GetAllModelList() []string {
+	modelSet := make(map[string]bool)
+	
+	for _, usage := range d {
+		if usage.ModelCredits != nil {
+			for model := range usage.ModelCredits {
+				if usage.ModelCredits[model] > 0 {
+					modelSet[model] = true
+				}
+			}
+		}
+	}
+	
+	models := make([]string, 0, len(modelSet))
+	for model := range modelSet {
+		models = append(models, model)
+	}
+	return models
 }

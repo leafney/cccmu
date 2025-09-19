@@ -105,9 +105,10 @@ export interface IMonitoringStatus {
 
 // 每日积分使用统计
 export interface IDailyUsage {
-  date: string;         // 日期 (YYYY-MM-DD)
-  totalCredits: number; // 当日总积分使用量
-  lastUpdated: string;  // 最后更新时间
+  date: string;                    // 日期 (YYYY-MM-DD)
+  totalCredits: number;            // 当日总积分使用量
+  modelCredits: { [key: string]: number }; // 按模型分组的积分使用量
+  lastUpdated: string;             // 最后更新时间
 }
 
 // 每日积分统计响应

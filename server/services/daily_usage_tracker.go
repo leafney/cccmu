@@ -218,6 +218,7 @@ func (d *DailyUsageTracker) collectHourlyUsage() error {
 	var hourlyCredits int
 	var recordCount int
 	var oldestRecord, newestRecord time.Time
+	modelCredits := make(map[string]int) // 按模型分组的积分统计
 
 	utils.Logf("[每日积分统计] 🔍 分析时间范围: %s 至 %s",
 		oneHourAgo.In(time.Local).Format("15:04:05"), time.Now().Format("15:04:05"))
@@ -239,6 +240,11 @@ func (d *DailyUsageTracker) collectHourlyUsage() error {
 		if data.CreatedAt.After(oneHourAgo) {
 			hourlyCredits += data.CreditsUsed
 			recordCount++
+			
+			// 按模型统计积分
+			if data.Model != "" && data.CreditsUsed > 0 {
+				modelCredits[data.Model] += data.CreditsUsed
+			}
 		}
 	}
 
@@ -248,6 +254,14 @@ func (d *DailyUsageTracker) collectHourlyUsage() error {
 	}
 
 	utils.Logf("[每日积分统计] 📊 过滤结果: %d/%d 条记录在统计时间范围内", recordCount, totalRecords)
+
+	// 输出按模型分组的统计结果
+	if len(modelCredits) > 0 {
+		utils.Logf("[每日积分统计] 📊 按模型分组统计:")
+		for model, credits := range modelCredits {
+			utils.Logf("[每日积分统计]   - %s: %d 积分", model, credits)
+		}
+	}
 
 	if hourlyCredits == 0 {
 		utils.Logf("[每日积分统计] ℹ️  最近1小时积分使用量为0，无需保存")
@@ -265,8 +279,8 @@ func (d *DailyUsageTracker) collectHourlyUsage() error {
 		beforeCredits = beforeUsage.TotalCredits
 	}
 
-	// 累加到当日总积分使用量
-	if err := d.db.SaveDailyUsage(localDate, hourlyCredits); err != nil {
+	// 累加到当日总积分使用量（包含按模型分组的数据）
+	if err := d.db.SaveDailyUsageWithModels(localDate, hourlyCredits, modelCredits); err != nil {
 		utils.Logf("[每日积分统计] ❌ 保存每日积分统计失败: %v", err)
 		return err
 	}

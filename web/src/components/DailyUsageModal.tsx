@@ -56,16 +56,43 @@ export function DailyUsageModal({ isOpen, onClose, data }: DailyUsageModalProps)
       return `${date.getMonth() + 1}/${date.getDate()}`;
     });
 
-    const credits = weeklyUsage.map(item => item.totalCredits);
+    // 获取所有使用过的模型列表
+    const allModels = new Set<string>();
+    weeklyUsage.forEach(item => {
+      if (item.modelCredits) {
+        Object.keys(item.modelCredits).forEach(model => {
+          if (item.modelCredits[model] > 0) {
+            allModels.add(model);
+          }
+        });
+      }
+    });
 
-    // 计算最大值用于Y轴范围设置
-    const maxValue = Math.max(...credits);
+    const modelList = Array.from(allModels);
+
+    // 模型颜色映射
+    const modelColors: { [key: string]: string } = {
+      'claude-3-5-sonnet': '#3B82F6',    // 蓝色
+      'claude-3-haiku': '#F97316',       // 橙色  
+      'claude-3-opus': '#8B5CF6',        // 紫色
+      'claude-3-sonnet': '#10B981',      // 绿色
+      'claude-2.1': '#F59E0B',           // 黄色
+      'claude-2.0': '#EF4444',           // 红色
+      'claude-instant': '#06B6D4',       // 青色
+    };
+
+    // 为未知模型分配默认颜色
+    const defaultColors = ['#64748B', '#84CC16', '#EC4899', '#14B8A6', '#F472B6'];
+    let colorIndex = 0;
+
+    // 计算总积分最大值用于Y轴范围设置
+    const maxValue = Math.max(...weeklyUsage.map(item => item.totalCredits));
     const yAxisMax = maxValue > 0 ? Math.ceil(maxValue * 1.2) : 10;
 
     // 图表配置
     const option = {
       title: {
-        text: '最近一周每日积分使用量',
+        text: '最近一周每日积分使用量（按模型分组）',
         left: 'center',
         top: '2%',
         textStyle: {
@@ -85,16 +112,43 @@ export function DailyUsageModal({ isOpen, onClose, data }: DailyUsageModalProps)
           color: '#fff'
         },
         formatter: (params: any) => {
-          const data = params[0];
-          const originalDate = weeklyUsage[data.dataIndex]?.date;
+          if (!params || params.length === 0) return '';
+          
+          const dataIndex = params[0].dataIndex;
+          const originalDate = weeklyUsage[dataIndex]?.date;
           const formattedDate = originalDate ? new Date(originalDate).toLocaleDateString('zh-CN') : '';
-          return `${formattedDate}<br/>积分使用量: ${data.value.toLocaleString()}`;
+          
+          let tooltip = `${formattedDate}<br/>`;
+          let totalCredits = 0;
+          
+          // 显示每个模型的积分
+          params.forEach((param: any) => {
+            if (param.value > 0) {
+              tooltip += `${param.seriesName}: ${param.value.toLocaleString()}<br/>`;
+              totalCredits += param.value;
+            }
+          });
+          
+          tooltip += `<strong>总计: ${totalCredits.toLocaleString()}</strong>`;
+          return tooltip;
+        }
+      },
+      legend: {
+        type: 'scroll',
+        orient: 'horizontal',
+        top: '8%',
+        left: 'center',
+        itemWidth: 14,
+        itemHeight: 14,
+        textStyle: {
+          color: '#6B7280',
+          fontSize: 12
         }
       },
       grid: {
         left: '8%',
         right: '8%',
-        top: '12%',
+        top: '18%',  // 增加顶部空间以容纳图例
         bottom: '12%',
         containLabel: true
       },
@@ -144,24 +198,50 @@ export function DailyUsageModal({ isOpen, onClose, data }: DailyUsageModalProps)
           }
         }
       },
-      series: [
-        {
-          name: '积分使用量',
+      series: modelList.map((model, index) => {
+        // 为每个模型准备数据
+        const modelData = weeklyUsage.map(item => {
+          return item.modelCredits?.[model] || 0;
+        });
+
+        // 获取模型颜色
+        const modelColor = modelColors[model] || defaultColors[colorIndex++ % defaultColors.length];
+
+        return {
+          name: model,
           type: 'bar',
-          data: credits,
+          stack: 'total',  // 关键：启用堆叠
+          data: modelData,
           itemStyle: {
-            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: '#60A5FA' },  // 蓝色渐变起点
-              { offset: 1, color: '#3B82F6' }   // 蓝色渐变终点
-            ]),
-            borderRadius: [4, 4, 0, 0]
+            color: modelColor,
+            borderRadius: index === modelList.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]  // 只有最顶部的柱子有圆角
           },
           emphasis: {
             itemStyle: {
-              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                { offset: 0, color: '#93C5FD' },
-                { offset: 1, color: '#60A5FA' }
-              ])
+              color: modelColor,
+              opacity: 0.8
+            }
+          },
+          barWidth: '50%',
+          label: {
+            show: false  // 在堆叠图中隐藏单个标签，避免重叠
+          } as any
+        };
+      }).concat([
+        // 添加一个透明的系列用于显示总计标签
+        {
+          name: '',
+          type: 'bar',
+          stack: 'total',
+          data: weeklyUsage.map(() => 0),  // 数据为0，不显示柱子
+          itemStyle: {
+            color: 'transparent',
+            borderRadius: [0, 0, 0, 0]
+          },
+          emphasis: {
+            itemStyle: {
+              color: 'transparent',
+              opacity: 1
             }
           },
           barWidth: '50%',
@@ -171,11 +251,16 @@ export function DailyUsageModal({ isOpen, onClose, data }: DailyUsageModalProps)
             color: '#374151',
             fontSize: 10,
             formatter: (params: any) => {
-              return params.value > 0 ? params.value.toLocaleString() : '';
+              const total = weeklyUsage[params.dataIndex]?.totalCredits || 0;
+              return total > 0 ? total.toLocaleString() : '';
             }
+          },
+          silent: true,  // 不响应鼠标事件
+          tooltip: {
+            show: false
           }
-        }
-      ]
+        } as any
+      ])
     };
 
     chartInstance.current.setOption(option, true);
