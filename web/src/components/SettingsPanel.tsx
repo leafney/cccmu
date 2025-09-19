@@ -15,6 +15,7 @@ export function SettingsPanel({ className = '', onConfigUpdate }: SettingsPanelP
     timeRange: 60,
     enabled: false,
     dailyResetUsed: false,
+    dailyUsageEnabled: false,
     autoSchedule: {
       enabled: false,
       startTime: '',
@@ -36,7 +37,8 @@ export function SettingsPanel({ className = '', onConfigUpdate }: SettingsPanelP
       gitCommit: 'Loading...',
       buildTime: '',
       goVersion: ''
-    }
+    },
+    plan: ''
   });
   const [cookieInput, setCookieInput] = useState<string>('');
   const [saving, setSaving] = useState(false);
@@ -175,18 +177,20 @@ export function SettingsPanel({ className = '', onConfigUpdate }: SettingsPanelP
         {/* 监控间隔 */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            监控间隔 (分钟)
+            监控间隔
           </label>
           <select
             className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200 hover:border-gray-400 bg-white"
             value={config.interval}
             onChange={(e) => updateConfig('interval', parseInt(e.target.value))}
           >
-            <option value={1}>1分钟</option>
-            <option value={5}>5分钟</option>
-            <option value={10}>10分钟</option>
-            <option value={30}>30分钟</option>
-            <option value={60}>1小时</option>
+            <option value={30}>30秒</option>
+            <option value={60}>1分钟</option>
+            <option value={180}>3分钟</option>
+            <option value={300}>5分钟</option>
+            <option value={600}>10分钟</option>
+            <option value={1800}>30分钟</option>
+            <option value={3600}>1小时</option>
           </select>
         </div>
 

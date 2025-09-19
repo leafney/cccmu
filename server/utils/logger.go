@@ -16,7 +16,7 @@ var (
 // InitLogger 初始化日志系统
 func InitLogger(enabled bool) {
 	logEnabled = enabled
-	
+
 	if enabled {
 		Logger = log.New(os.Stdout, "", log.LstdFlags)
 		log.SetOutput(os.Stdout)

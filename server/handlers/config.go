@@ -26,19 +26,19 @@ func SetVersionInfo(version, gitCommit, buildTime string) {
 
 // ConfigHandler 配置处理器
 type ConfigHandler struct {
-	db              *database.BadgerDB
-	scheduler       *services.SchedulerService
+	db               *database.BadgerDB
+	scheduler        *services.SchedulerService
 	autoResetService *services.AutoResetService
-	asyncUpdater    *services.AsyncConfigUpdater
+	asyncUpdater     *services.AsyncConfigUpdater
 }
 
 // NewConfigHandler 创建配置处理器
 func NewConfigHandler(db *database.BadgerDB, scheduler *services.SchedulerService, autoResetService *services.AutoResetService, asyncUpdater *services.AsyncConfigUpdater) *ConfigHandler {
 	return &ConfigHandler{
-		db:              db,
-		scheduler:       scheduler,
+		db:               db,
+		scheduler:        scheduler,
 		autoResetService: autoResetService,
-		asyncUpdater:    asyncUpdater,
+		asyncUpdater:     asyncUpdater,
 	}
 }
 
@@ -52,7 +52,7 @@ func (h *ConfigHandler) GetConfig(c *fiber.Ctx) error {
 
 	// 转换为API响应格式，Cookie字段自动转为布尔值
 	responseConfig := config.ToResponse()
-	
+
 	// 添加版本信息
 	responseConfig.Version = models.VersionInfo{
 		Version:   Version,
@@ -60,7 +60,16 @@ func (h *ConfigHandler) GetConfig(c *fiber.Ctx) error {
 		BuildTime: BuildTime,
 		GoVersion: runtime.Version(),
 	}
-	
+
+	// 添加订阅等级信息，优先从BadgerDB获取持久化数据
+	if balance, err := h.db.GetCreditBalance(); err == nil && balance != nil {
+		responseConfig.Plan = balance.Plan
+	} else if balance := h.scheduler.GetLatestBalance(); balance != nil {
+		responseConfig.Plan = balance.Plan
+	} else {
+		responseConfig.Plan = ""
+	}
+
 	return c.JSON(models.Success(responseConfig))
 }
 
@@ -80,15 +89,16 @@ func (h *ConfigHandler) UpdateConfig(c *fiber.Ctx) error {
 
 	// 构建新的配置，保留内部字段
 	newConfig := &models.UserConfig{
-		Cookie:                  currentConfig.Cookie, // 默认保持原有Cookie
-		Interval:                requestConfig.Interval,
-		TimeRange:               requestConfig.TimeRange,
-		Enabled:                 requestConfig.Enabled,
-		LastCookieValidTime:     currentConfig.LastCookieValidTime,
+		Cookie:                   currentConfig.Cookie, // 默认保持原有Cookie
+		Interval:                 requestConfig.Interval,
+		TimeRange:                requestConfig.TimeRange,
+		Enabled:                  requestConfig.Enabled,
+		LastCookieValidTime:      currentConfig.LastCookieValidTime,
 		CookieValidationInterval: currentConfig.CookieValidationInterval,
-		DailyResetUsed:          currentConfig.DailyResetUsed,
-		AutoSchedule:            currentConfig.AutoSchedule, // 默认保持原有自动调度配置
-		AutoReset:               currentConfig.AutoReset,    // 默认保持原有自动重置配置
+		DailyResetUsed:           currentConfig.DailyResetUsed,
+		DailyUsageEnabled:        currentConfig.DailyUsageEnabled, // 默认保持原有每日统计配置
+		AutoSchedule:             currentConfig.AutoSchedule,      // 默认保持原有自动调度配置
+		AutoReset:                currentConfig.AutoReset,         // 默认保持原有自动重置配置
 	}
 
 	// 如果请求中包含新的Cookie，则更新（使用指针判断是否设置了Cookie字段）
@@ -96,18 +106,26 @@ func (h *ConfigHandler) UpdateConfig(c *fiber.Ctx) error {
 		newConfig.Cookie = *requestConfig.Cookie
 	}
 
+	// 如果请求中包含每日积分统计配置，则更新
+	if requestConfig.DailyUsageEnabled != nil {
+		oldDailyUsageEnabled := currentConfig.DailyUsageEnabled
+		newConfig.DailyUsageEnabled = *requestConfig.DailyUsageEnabled
+		
+		log.Printf("[配置更新] 每日积分统计配置变更: %v -> %v", oldDailyUsageEnabled, newConfig.DailyUsageEnabled)
+	}
+
 	// 如果请求中包含自动调度配置，则更新
 	if requestConfig.AutoSchedule != nil {
 		oldAutoSchedule := currentConfig.AutoSchedule
 		newConfig.AutoSchedule = *requestConfig.AutoSchedule
-		
+
 		log.Printf("[配置更新] 自动调度配置变更:")
 		log.Printf("[配置更新] - 启用状态: %v -> %v", oldAutoSchedule.Enabled, newConfig.AutoSchedule.Enabled)
 		if newConfig.AutoSchedule.Enabled {
 			log.Printf("[配置更新] - 时间范围: %s-%s", newConfig.AutoSchedule.StartTime, newConfig.AutoSchedule.EndTime)
 			log.Printf("[配置更新] - 范围内监控: %v", newConfig.AutoSchedule.MonitoringOn)
 		}
-		
+
 		// 如果启用了自动调度，强制开启主监控开关
 		if newConfig.AutoSchedule.Enabled {
 			newConfig.Enabled = true
@@ -119,7 +137,7 @@ func (h *ConfigHandler) UpdateConfig(c *fiber.Ctx) error {
 	if requestConfig.AutoReset != nil {
 		oldAutoReset := currentConfig.AutoReset
 		newConfig.AutoReset = *requestConfig.AutoReset
-		
+
 		log.Printf("[配置更新] 自动重置配置变更:")
 		log.Printf("[配置更新] - 启用状态: %v -> %v", oldAutoReset.Enabled, newConfig.AutoReset.Enabled)
 		if newConfig.AutoReset.Enabled && newConfig.AutoReset.ResetTime != "" {
@@ -182,7 +200,7 @@ func (h *ConfigHandler) UpdateConfig(c *fiber.Ctx) error {
 	} else {
 		// 异步服务不可用，降级到同步模式
 		log.Printf("异步配置更新服务不可用，降级到同步模式")
-		
+
 		// 更新调度器配置
 		if err := h.scheduler.UpdateConfig(newConfig); err != nil {
 			log.Printf("更新调度器配置失败: %v", err)
@@ -202,13 +220,14 @@ func (h *ConfigHandler) UpdateConfig(c *fiber.Ctx) error {
 	log.Printf("[配置更新] - 间隔: %d秒", newConfig.Interval)
 	log.Printf("[配置更新] - 时间范围: %d分钟", newConfig.TimeRange)
 	log.Printf("[配置更新] - 监控启用: %v", newConfig.Enabled)
+	log.Printf("[配置更新] - 每日积分统计: %v", newConfig.DailyUsageEnabled)
 	log.Printf("[配置更新] - 自动调度: %v", newConfig.AutoSchedule.Enabled)
 	log.Printf("[配置更新] - 自动重置: %v", newConfig.AutoReset.Enabled)
 
 	// 通过SSE通知前端配置已更新
 	log.Printf("[配置更新] 通知前端配置变更...")
 	h.scheduler.NotifyConfigChange()
-	
+
 	// 通知自动调度状态变化
 	log.Printf("[配置更新] 通知前端自动调度状态变更...")
 	h.scheduler.NotifyAutoScheduleChange()

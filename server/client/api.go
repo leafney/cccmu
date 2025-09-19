@@ -74,6 +74,28 @@ type ClaudeUsageData struct {
 	Model       string `json:"model"`
 }
 
+// usageFilterRule 定义要处理的usage数据匹配规则
+type usageFilterRule struct {
+	Type     string
+	Endpoint string
+}
+
+// usageFilterRules 定义要处理的usage数据匹配规则
+var usageFilterRules = []usageFilterRule{
+	{Type: "USAGE", Endpoint: "v1/messages"},
+	{Type: "CODEX_USAGE", Endpoint: "backend-api/codex/responses"},
+}
+
+func matchesUsageFilter(data ClaudeUsageData) bool {
+	for _, rule := range usageFilterRules {
+		if data.Type == rule.Type && data.Endpoint == rule.Endpoint {
+			return true
+		}
+	}
+
+	return false
+}
+
 // FetchUsageData 获取积分使用数据
 func (c *ClaudeAPIClient) FetchUsageData() ([]models.UsageData, error) {
 	// 检查缓存
@@ -134,10 +156,13 @@ func (c *ClaudeAPIClient) FetchUsageData() ([]models.UsageData, error) {
 
 // ClaudeCreditsResponse Claude积分API响应
 type ClaudeCreditsResponse struct {
-	UserID  int    `json:"userId"`
-	Email   string `json:"email"`
-	Credits int    `json:"credits"`
-	Plan    string `json:"plan"`
+	UserID        int    `json:"userId"`
+	Email         string `json:"email"`
+	Credits       int    `json:"credits"`
+	NormalCredits int    `json:"normalCredits"`
+	BonusCredits  int    `json:"bonusCredits"`
+	CreditLimit   int    `json:"creditLimit"`
+	Plan          string `json:"plan"`
 }
 
 // FetchCreditBalance 获取积分余额
@@ -180,7 +205,7 @@ func (c *ClaudeAPIClient) FetchCreditBalance() (*models.CreditBalance, error) {
 	}
 
 	// 添加调试日志（可控制）
-	utils.Logf("积分余额API原始响应: %s", string(resp.Body()))
+	// utils.Logf("积分余额API原始响应: %s", string(resp.Body()))
 
 	// 解析API返回的数据格式
 	var creditsResp ClaudeCreditsResponse
@@ -197,6 +222,7 @@ func (c *ClaudeAPIClient) FetchCreditBalance() (*models.CreditBalance, error) {
 
 	result := &models.CreditBalance{
 		Remaining: creditsResp.Credits,
+		Plan:      creditsResp.Plan,
 		UpdatedAt: time.Now(),
 	}
 	utils.Logf("API请求成功: FetchCreditBalance - 获取到余额 %d", creditsResp.Credits)
@@ -212,8 +238,8 @@ func (c *ClaudeAPIClient) convertToUsageData(apiData []ClaudeUsageData) []models
 	var usageData []models.UsageData
 
 	for _, data := range apiData {
-		// 筛选仅处理同时满足 type="USAGE" 且 endpoint="v1/messages" 的数据
-		if data.Type != "USAGE" || data.Endpoint != "v1/messages" {
+		// 仅处理符合白名单规则的usage数据
+		if !matchesUsageFilter(data) {
 			continue
 		}
 

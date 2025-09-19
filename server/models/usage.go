@@ -13,10 +13,10 @@ type UsageData struct {
 // UsageDataList 积分使用数据列表
 type UsageDataList []UsageData
 
-
 // CreditBalance 积分余额信息
 type CreditBalance struct {
 	Remaining int       `json:"remaining"`
+	Plan      string    `json:"plan"` // 订阅等级
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 

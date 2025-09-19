@@ -115,7 +115,7 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 		// 删除会话
 		h.authManager.DeleteSession(sessionID)
 		log.Printf("会话已删除: %s", sessionID[:8]+"...")
-		
+
 		// 停止定时任务
 		if h.scheduler != nil && h.scheduler.IsRunning() {
 			if err := h.scheduler.Stop(); err != nil {

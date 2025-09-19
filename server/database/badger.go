@@ -41,7 +41,7 @@ func (b *BadgerDB) SaveConfig(config *models.UserConfig) error {
 		}
 
 		// 保存各个配置项
-		configs := map[string]interface{}{
+		configs := map[string]any{
 			"config:cookie":                   config.Cookie,
 			"config:interval":                 config.Interval,
 			"config:timerange":                config.TimeRange,
@@ -91,8 +91,8 @@ func (b *BadgerDB) GetConfig() (*models.UserConfig, error) {
 		if err == nil {
 			err = cookieItem.Value(func(val []byte) error {
 				var cookie string
-				if err := json.Unmarshal(val, &cookie); err != nil {
-					return err
+				if unmarshalErr := json.Unmarshal(val, &cookie); unmarshalErr != nil {
+					return unmarshalErr
 				}
 				config.Cookie = cookie
 				return nil
@@ -254,3 +254,259 @@ func (b *BadgerDB) CleanOldData(keepHours int) error {
 	})
 }
 
+// SaveCreditBalance 保存积分余额信息
+func (b *BadgerDB) SaveCreditBalance(balance *models.CreditBalance) error {
+	return b.db.Update(func(txn *badger.Txn) error {
+		data, err := json.Marshal(balance)
+		if err != nil {
+			return err
+		}
+
+		return txn.Set([]byte("balance:latest"), data)
+	})
+}
+
+// GetCreditBalance 获取积分余额信息
+func (b *BadgerDB) GetCreditBalance() (*models.CreditBalance, error) {
+	var balance *models.CreditBalance
+
+	err := b.db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte("balance:latest"))
+		if err != nil {
+			if err == badger.ErrKeyNotFound {
+				return nil // 返回nil表示未找到数据
+			}
+			return err
+		}
+
+		err = item.Value(func(val []byte) error {
+			balance = &models.CreditBalance{}
+			return json.Unmarshal(val, balance)
+		})
+		return err
+	})
+
+	return balance, err
+}
+
+// SaveDailyUsage 保存或累加每日积分使用统计
+func (b *BadgerDB) SaveDailyUsage(date string, credits int) error {
+	return b.db.Update(func(txn *badger.Txn) error {
+		key := []byte(models.GetDailyUsageKey(date))
+		
+		// 尝试获取现有数据
+		var currentUsage models.DailyUsage
+		item, err := txn.Get(key)
+		if err != nil && err != badger.ErrKeyNotFound {
+			return err
+		}
+		
+		if err == badger.ErrKeyNotFound {
+			// 不存在，创建新记录
+			currentUsage = models.DailyUsage{
+				Date:         date,
+				TotalCredits: credits,
+			}
+		} else {
+			// 存在，累加积分
+			err = item.Value(func(val []byte) error {
+				return json.Unmarshal(val, &currentUsage)
+			})
+			if err != nil {
+				return err
+			}
+			
+			currentUsage.TotalCredits += credits
+		}
+		
+		// 保存数据
+		data, err := json.Marshal(currentUsage)
+		if err != nil {
+			return err
+		}
+		
+		return txn.Set(key, data)
+	})
+}
+
+// SaveDailyUsageWithModels 保存或累加每日积分使用统计（支持按模型分组）
+func (b *BadgerDB) SaveDailyUsageWithModels(date string, credits int, modelCredits map[string]int) error {
+	return b.db.Update(func(txn *badger.Txn) error {
+		key := []byte(models.GetDailyUsageKey(date))
+		
+		// 尝试获取现有数据
+		var currentUsage models.DailyUsage
+		item, err := txn.Get(key)
+		if err != nil && err != badger.ErrKeyNotFound {
+			return err
+		}
+		
+		if err == badger.ErrKeyNotFound {
+			// 不存在，创建新记录
+			currentUsage = models.DailyUsage{
+				Date:         date,
+				TotalCredits: credits,
+				ModelCredits: make(map[string]int),
+			}
+			// 复制模型积分数据
+			for model, modelCredit := range modelCredits {
+				currentUsage.ModelCredits[model] = modelCredit
+			}
+		} else {
+			// 存在，累加积分
+			err = item.Value(func(val []byte) error {
+				return json.Unmarshal(val, &currentUsage)
+			})
+			if err != nil {
+				return err
+			}
+			
+			// 确保 ModelCredits 字段不为 nil
+			if currentUsage.ModelCredits == nil {
+				currentUsage.ModelCredits = make(map[string]int)
+			}
+			
+			// 累加总积分
+			currentUsage.TotalCredits += credits
+			
+			// 按模型累加积分
+			for model, modelCredit := range modelCredits {
+				currentUsage.ModelCredits[model] += modelCredit
+			}
+		}
+		
+		// 保存数据
+		data, err := json.Marshal(currentUsage)
+		if err != nil {
+			return err
+		}
+		
+		return txn.Set(key, data)
+	})
+}
+
+// GetDailyUsage 获取指定日期的积分使用统计
+func (b *BadgerDB) GetDailyUsage(date string) (*models.DailyUsage, error) {
+	var usage *models.DailyUsage
+	
+	err := b.db.View(func(txn *badger.Txn) error {
+		key := []byte(models.GetDailyUsageKey(date))
+		item, err := txn.Get(key)
+		if err != nil {
+			if err == badger.ErrKeyNotFound {
+				return nil // 返回nil表示未找到数据
+			}
+			return err
+		}
+		
+		err = item.Value(func(val []byte) error {
+			usage = &models.DailyUsage{}
+			return json.Unmarshal(val, usage)
+		})
+		return err
+	})
+	
+	// 确保 ModelCredits 字段不为 nil（兼容旧数据）
+	if usage != nil && usage.ModelCredits == nil {
+		usage.ModelCredits = make(map[string]int)
+	}
+	
+	return usage, err
+}
+
+// GetWeeklyUsage 获取最近一周的每日积分使用统计
+func (b *BadgerDB) GetWeeklyUsage() (models.DailyUsageList, error) {
+	var usageList models.DailyUsageList
+	
+	err := b.db.View(func(txn *badger.Txn) error {
+		weekDates := models.GetWeekDates()
+		
+		// 按日期获取数据
+		for _, date := range weekDates {
+			key := []byte(models.GetDailyUsageKey(date))
+			
+			item, err := txn.Get(key)
+			if err != nil {
+				if err == badger.ErrKeyNotFound {
+					// 该日期没有数据，创建空记录
+					usageList = append(usageList, models.DailyUsage{
+						Date:         date,
+						TotalCredits: 0,
+						ModelCredits: make(map[string]int),
+					})
+					continue
+				}
+				return err
+			}
+			
+			var usage models.DailyUsage
+			err = item.Value(func(val []byte) error {
+				return json.Unmarshal(val, &usage)
+			})
+			if err != nil {
+				log.Printf("解析每日使用统计失败 %s: %v", key, err)
+				continue
+			}
+			
+			// 确保 ModelCredits 字段不为 nil（兼容旧数据）
+			if usage.ModelCredits == nil {
+				usage.ModelCredits = make(map[string]int)
+			}
+			
+			usageList = append(usageList, usage)
+		}
+		
+		log.Printf("获取一周积分统计完成: 共%d天数据", len(usageList))
+		return nil
+	})
+	
+	return usageList, err
+}
+
+// CleanupOldDailyUsage 清理超过指定天数的每日积分统计数据
+func (b *BadgerDB) CleanupOldDailyUsage(keepDays int) error {
+	return b.db.Update(func(txn *badger.Txn) error {
+		cutoffDate := time.Now().Local().AddDate(0, 0, -keepDays).Format("2006-01-02")
+		
+		opts := badger.DefaultIteratorOptions
+		it := txn.NewIterator(opts)
+		defer it.Close()
+		
+		prefix := []byte("daily_usage:")
+		var keysToDelete [][]byte
+		var deletedCount int
+		
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			item := it.Item()
+			key := item.Key()
+			
+			var usage models.DailyUsage
+			err := item.Value(func(val []byte) error {
+				return json.Unmarshal(val, &usage)
+			})
+			if err != nil {
+				log.Printf("解析每日使用统计失败 %s: %v", key, err)
+				continue
+			}
+			
+			// 删除超过保留期限的数据
+			if usage.Date < cutoffDate {
+				keysToDelete = append(keysToDelete, append([]byte(nil), key...))
+				deletedCount++
+			}
+		}
+		
+		// 执行删除操作
+		for _, key := range keysToDelete {
+			if err := txn.Delete(key); err != nil {
+				return err
+			}
+		}
+		
+		if deletedCount > 0 {
+			log.Printf("清理过期的每日积分统计: 删除%d条记录（保留%d天）", deletedCount, keepDays)
+		}
+		
+		return nil
+	})
+}

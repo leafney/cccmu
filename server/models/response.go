@@ -43,10 +43,10 @@ func Error(code int, message string, err error) *ErrorResponse {
 
 // 错误类型常量
 const (
-	ErrInvalidCookie     = "INVALID_COOKIE"
-	ErrAPIRequest        = "API_REQUEST_ERROR"
-	ErrDataParsing       = "DATA_PARSING_ERROR"
-	ErrDatabaseOperation = "DATABASE_ERROR"
-	ErrTaskNotRunning    = "TASK_NOT_RUNNING"
+	ErrInvalidCookie      = "INVALID_COOKIE"
+	ErrAPIRequest         = "API_REQUEST_ERROR"
+	ErrDataParsing        = "DATA_PARSING_ERROR"
+	ErrDatabaseOperation  = "DATABASE_ERROR"
+	ErrTaskNotRunning     = "TASK_NOT_RUNNING"
 	ErrTaskAlreadyRunning = "TASK_ALREADY_RUNNING"
 )

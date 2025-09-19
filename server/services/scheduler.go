@@ -30,10 +30,12 @@ type SchedulerService struct {
 	errorListeners        []chan string
 	resetStatusListeners  []chan bool
 	autoScheduler         *AutoSchedulerService
-	autoScheduleListeners []chan bool // 自动调度状态变化监听器
-	balanceJob            gocron.Job  // 积分余额任务引用
-	balanceTaskPaused     bool        // 积分余额任务暂停状态
-	autoResetService      *AutoResetService // 自动重置服务引用
+	autoScheduleListeners []chan bool                // 自动调度状态变化监听器
+	dailyUsageListeners   []chan []models.DailyUsage // 每日积分统计数据监听器
+	balanceJob            gocron.Job                 // 积分余额任务引用
+	balanceTaskPaused     bool                       // 积分余额任务暂停状态
+	autoResetService      *AutoResetService          // 自动重置服务引用
+	dailyUsageTracker     *DailyUsageTracker         // 每日积分统计跟踪服务
 }
 
 // NewSchedulerService 创建新的调度服务
@@ -69,14 +71,43 @@ func NewSchedulerService(db *database.BadgerDB) (*SchedulerService, error) {
 		errorListeners:        make([]chan string, 0),
 		resetStatusListeners:  make([]chan bool, 0),
 		autoScheduleListeners: make([]chan bool, 0),
+		dailyUsageListeners:   make([]chan []models.DailyUsage, 0),
 	}
 
 	// 创建自动调度服务
 	service.autoScheduler = NewAutoSchedulerService(service)
 
+	// 创建每日积分统计服务
+	dailyUsageTracker, err := NewDailyUsageTracker(db, apiClient)
+	if err != nil {
+		utils.Logf("[调度器] ❌ 创建每日积分统计服务失败: %v", err)
+	} else {
+		service.dailyUsageTracker = dailyUsageTracker
+		utils.Logf("[调度器] ✅ 每日积分统计服务创建成功（独立调度器已启动）")
+
+		// 立即初始化每日积分统计服务（程序启动时就初始化）
+		if err := dailyUsageTracker.Initialize(); err != nil {
+			utils.Logf("[调度器] ❌ 初始化每日积分统计服务失败: %v", err)
+		} else {
+			utils.Logf("[调度器] ✅ 每日积分统计服务已初始化")
+
+			// 根据配置的初始状态决定是否添加任务到调度器
+			if config.DailyUsageEnabled {
+				utils.Logf("[调度器] 🔄 配置启用每日积分统计，正在添加任务到调度器...")
+				if err := dailyUsageTracker.Start(); err != nil {
+					utils.Logf("[调度器] ❌ 初始化时添加每日积分统计任务失败: %v", err)
+				} else {
+					utils.Logf("[调度器] ✅ 每日积分统计任务已添加到调度器")
+				}
+			} else {
+				utils.Logf("[调度器] ℹ️  每日积分统计功能已禁用(DailyUsageEnabled=false)，调度器运行但无任务")
+			}
+		}
+	}
+
 	// 立即创建每日重置任务（只需创建一次）
 	if err := service.createDailyResetTask(); err != nil {
-		log.Printf("创建每日重置任务失败: %v", err)
+		utils.Logf("[调度器] ❌ 创建每日重置任务失败: %v", err)
 	}
 
 	return service, nil
@@ -185,6 +216,8 @@ func (s *SchedulerService) Start() error {
 
 	log.Printf("定时任务已启动，间隔: %d秒", s.config.Interval)
 
+	// 每日积分统计任务已在初始化时根据配置激活，无需重复处理
+
 	// 立即执行一次，确保在所有监听器建立后执行
 	go func() {
 		time.Sleep(100 * time.Millisecond) // 短暂延迟，确保SSE连接已建立
@@ -231,6 +264,15 @@ func (s *SchedulerService) Stop() error {
 	if err := s.scheduler.Shutdown(); err != nil {
 		log.Printf("强制关闭调度器失败: %v", err)
 		// 不返回错误，继续执行清理
+	}
+
+	// 关闭每日积分统计服务（程序退出时注销）
+	if s.dailyUsageTracker != nil && s.dailyUsageTracker.IsInitialized() {
+		if err := s.dailyUsageTracker.Shutdown(); err != nil {
+			utils.Logf("[调度器] ❌ 关闭每日积分统计服务失败: %v", err)
+		} else {
+			utils.Logf("[调度器] ✅ 每日积分统计服务已关闭")
+		}
 	}
 
 	s.isRunning = false
@@ -309,6 +351,9 @@ func (s *SchedulerService) UpdateConfig(newConfig *models.UserConfig) error {
 	if s.autoScheduler != nil {
 		s.autoScheduler.UpdateConfig(&newConfig.AutoSchedule)
 	}
+
+	// 处理每日积分统计配置变更
+	s.handleDailyUsageConfigChange(oldConfig, newConfig)
 
 	// 只在必要时重启任务
 	if needsRestart {
@@ -393,6 +438,18 @@ func (s *SchedulerService) UpdateConfigAsync(oldConfig, newConfig *models.UserCo
 
 // UpdateConfigSync 同步更新配置（仅保存到数据库和更新内存配置，不进行重型操作）
 func (s *SchedulerService) UpdateConfigSync(newConfig *models.UserConfig) error {
+	// 获取当前配置的副本用于比较
+	s.mu.Lock()
+	var oldConfig *models.UserConfig
+	if s.config != nil {
+		// 创建旧配置的副本
+		oldConfig = &models.UserConfig{
+			DailyUsageEnabled: s.config.DailyUsageEnabled,
+			// 只需要复制用于比较的字段
+		}
+	}
+	s.mu.Unlock()
+
 	// 仅保存配置到数据库
 	if err := s.db.SaveConfig(newConfig); err != nil {
 		return fmt.Errorf("保存配置失败: %w", err)
@@ -400,15 +457,20 @@ func (s *SchedulerService) UpdateConfigSync(newConfig *models.UserConfig) error 
 
 	// 更新内存中的非重型配置
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	// 对于不需要重启任务的配置直接更新
 	if s.config != nil {
 		// 更新时间范围等不影响任务运行的配置
 		s.config.TimeRange = newConfig.TimeRange
+		// 更新每日积分统计配置
+		s.config.DailyUsageEnabled = newConfig.DailyUsageEnabled
 	}
+	s.mu.Unlock()
 
 	log.Printf("[同步配置] 配置已同步保存到数据库")
+
+	// 处理每日积分统计配置变更
+	s.handleDailyUsageConfigChange(oldConfig, newConfig)
+
 	return nil
 }
 
@@ -647,6 +709,12 @@ func (s *SchedulerService) fetchAndSaveBalance() error {
 		// 通过SSE推送错误信息
 		s.notifyErrorListeners(fmt.Sprintf("获取积分余额失败: %s", err.Error()))
 		return err
+	}
+
+	// 保存到BadgerDB（持久化存储）
+	if err := s.db.SaveCreditBalance(balance); err != nil {
+		log.Printf("保存积分余额到数据库失败: %v", err)
+		// 注意：这里不返回错误，继续执行内存更新和通知
 	}
 
 	// 更新最新积分余额并通知监听器
@@ -974,20 +1042,20 @@ func (s *SchedulerService) NotifyAutoScheduleChange() {
 func (s *SchedulerService) PauseBalanceTask() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	// 检查是否已经暂停
 	if s.balanceTaskPaused {
 		utils.Logf("[任务协调] ⚠️  积分获取任务已暂停，无需重复操作")
 		return
 	}
-	
+
 	// 检查任务是否存在
 	if s.balanceJob == nil {
 		utils.Logf("[任务协调] ⚠️  积分获取任务不存在，更新暂停状态")
 		s.balanceTaskPaused = true
 		return
 	}
-	
+
 	// 检查调度器状态
 	if s.scheduler == nil || !s.isRunning {
 		utils.Logf("[任务协调] ⚠️  调度器未运行，直接更新暂停状态")
@@ -995,7 +1063,7 @@ func (s *SchedulerService) PauseBalanceTask() {
 		s.balanceJob = nil
 		return
 	}
-	
+
 	utils.Logf("[任务协调] ⏸️  暂停积分余额获取任务 (ID: %v)", s.balanceJob.ID())
 	if err := s.scheduler.RemoveJob(s.balanceJob.ID()); err != nil {
 		utils.Logf("[任务协调] ❌ 暂停积分任务失败: %v", err)
@@ -1013,9 +1081,9 @@ func (s *SchedulerService) PauseBalanceTask() {
 func (s *SchedulerService) RebuildBalanceTask() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	utils.Logf("[任务协调] 🔄 重建积分余额获取任务")
-	
+
 	// 第一步：移除现有任务
 	if s.balanceJob != nil {
 		utils.Logf("[任务协调] 🗑️  移除现有积分任务 (ID: %v)", s.balanceJob.ID())
@@ -1026,7 +1094,7 @@ func (s *SchedulerService) RebuildBalanceTask() {
 		}
 		s.balanceJob = nil
 	}
-	
+
 	// 第二步：检查调度器状态，如果异常则重建整个调度器
 	if s.scheduler == nil || !s.isRunning {
 		utils.Logf("[任务协调] 🔧 检测到调度器异常，尝试重建调度器")
@@ -1036,7 +1104,7 @@ func (s *SchedulerService) RebuildBalanceTask() {
 			return
 		}
 	}
-	
+
 	// 第三步：创建新的积分任务
 	utils.Logf("[任务协调] 🔨 创建新的积分余额获取任务")
 	balanceJob, err := s.scheduler.NewJob(
@@ -1050,11 +1118,11 @@ func (s *SchedulerService) RebuildBalanceTask() {
 		s.balanceTaskPaused = false
 		return
 	}
-	
+
 	s.balanceJob = balanceJob
 	s.balanceTaskPaused = false
 	utils.Logf("[任务协调] ✅ 积分余额获取任务已重建 (ID: %v)", balanceJob.ID())
-	
+
 	// 第四步：立即执行一次获取，避免等待
 	go func() {
 		time.Sleep(1 * time.Second) // 短暂延迟确保任务已就绪
@@ -1069,22 +1137,22 @@ func (s *SchedulerService) RebuildBalanceTask() {
 func (s *SchedulerService) ResumeBalanceTask() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	// 检查是否已经在运行
 	if !s.balanceTaskPaused {
 		utils.Logf("[任务协调] ⚠️  积分获取任务未暂停，无需恢复")
 		return
 	}
-	
+
 	utils.Logf("[任务协调] ▶️  恢复积分余额获取任务")
-	
+
 	// 检查是否已经存在任务（防止重复创建）
 	if s.balanceJob != nil {
 		utils.Logf("[任务协调] ⚠️  积分获取任务已存在 (ID: %v)，更新状态", s.balanceJob.ID())
 		s.balanceTaskPaused = false
 		return
 	}
-	
+
 	// 如果调度器不存在或未运行，使用重建策略
 	if s.scheduler == nil || !s.isRunning {
 		utils.Logf("[任务协调] 🔧 调度器状态异常，采用重建策略")
@@ -1093,7 +1161,7 @@ func (s *SchedulerService) ResumeBalanceTask() {
 		s.mu.Lock() // 重新获取锁
 		return
 	}
-	
+
 	// 重新创建积分余额任务
 	utils.Logf("[任务协调] 🔨 重新创建积分余额获取任务")
 	balanceJob, err := s.scheduler.NewJob(
@@ -1107,11 +1175,11 @@ func (s *SchedulerService) ResumeBalanceTask() {
 		s.balanceTaskPaused = false
 		return
 	}
-	
+
 	s.balanceJob = balanceJob
 	s.balanceTaskPaused = false
 	utils.Logf("[任务协调] ✅ 积分余额获取任务已恢复 (ID: %v)", balanceJob.ID())
-	
+
 	// 立即执行一次获取
 	go func() {
 		time.Sleep(1 * time.Second)
@@ -1126,26 +1194,32 @@ func (s *SchedulerService) ResumeBalanceTask() {
 func (s *SchedulerService) IsBalanceTaskRunning() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	// 检查基本状态
 	if s.balanceTaskPaused || s.balanceJob == nil || !s.isRunning {
 		return false
 	}
-	
+
 	// 检查调度器状态
 	if s.scheduler == nil {
 		return false
 	}
-	
+
 	return true
 }
 
 // NotifyBalanceUpdate 通知积分余额更新（供阈值触发任务调用）
 func (s *SchedulerService) NotifyBalanceUpdate(balance *models.CreditBalance) {
+	// 保存到BadgerDB（持久化存储）
+	if err := s.db.SaveCreditBalance(balance); err != nil {
+		log.Printf("保存积分余额到数据库失败: %v", err)
+		// 注意：这里不返回错误，继续执行内存更新和通知
+	}
+
 	s.mu.Lock()
 	s.lastBalance = balance
 	s.mu.Unlock()
-	
+
 	s.notifyBalanceListeners(balance)
 	utils.Logf("[任务协调] 📡 积分余额已更新并推送: %d", balance.Remaining)
 }
@@ -1166,6 +1240,11 @@ func (s *SchedulerService) Shutdown() {
 		s.autoScheduler.Close()
 	}
 
+	// 关闭每日积分统计服务
+	if s.dailyUsageTracker != nil {
+		s.dailyUsageTracker.Shutdown()
+	}
+
 	// 关闭所有监听器
 	s.mu.Lock()
 	for _, listener := range s.listeners {
@@ -1183,18 +1262,22 @@ func (s *SchedulerService) Shutdown() {
 	for _, listener := range s.autoScheduleListeners {
 		close(listener)
 	}
+	for _, listener := range s.dailyUsageListeners {
+		close(listener)
+	}
 	s.listeners = nil
 	s.balanceListeners = nil
 	s.errorListeners = nil
 	s.resetStatusListeners = nil
 	s.autoScheduleListeners = nil
+	s.dailyUsageListeners = nil
 	s.mu.Unlock()
 }
 
 // rebuildScheduler 重建调度器（内部方法）
 func (s *SchedulerService) rebuildScheduler() error {
 	utils.Logf("[任务协调] 🔄 重建调度器")
-	
+
 	// 停止并关闭现有调度器
 	if s.scheduler != nil {
 		s.scheduler.StopJobs()
@@ -1202,15 +1285,15 @@ func (s *SchedulerService) rebuildScheduler() error {
 			utils.Logf("[任务协调] ⚠️  关闭旧调度器失败: %v", err)
 		}
 	}
-	
+
 	// 创建新调度器
 	newScheduler, err := gocron.NewScheduler()
 	if err != nil {
 		return fmt.Errorf("创建新调度器失败: %w", err)
 	}
-	
+
 	s.scheduler = newScheduler
-	
+
 	// 重新创建使用数据任务
 	usageJob, err := s.scheduler.NewJob(
 		gocron.DurationJob(time.Duration(s.config.Interval)*time.Second),
@@ -1220,11 +1303,11 @@ func (s *SchedulerService) rebuildScheduler() error {
 	if err != nil {
 		return fmt.Errorf("创建使用数据任务失败: %w", err)
 	}
-	
+
 	// 启动调度器
 	s.scheduler.Start()
 	s.isRunning = true
-	
+
 	utils.Logf("[任务协调] ✅ 调度器重建完成，使用数据任务ID: %v", usageJob.ID())
 	return nil
 }
@@ -1234,4 +1317,113 @@ func (s *SchedulerService) SetAutoResetService(autoResetService *AutoResetServic
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.autoResetService = autoResetService
+}
+
+// handleDailyUsageConfigChange 处理每日积分统计配置变更
+func (s *SchedulerService) handleDailyUsageConfigChange(oldConfig, newConfig *models.UserConfig) {
+	if s.dailyUsageTracker == nil {
+		utils.Logf("[配置更新] ⚠️  每日积分统计服务为空，跳过配置变更")
+		return
+	}
+
+	oldEnabled := oldConfig != nil && oldConfig.DailyUsageEnabled
+	newEnabled := newConfig.DailyUsageEnabled
+
+	utils.Logf("[配置更新] 🔄 检查每日积分统计配置变更: %v -> %v", oldEnabled, newEnabled)
+
+	// 配置没有变化，无需处理
+	if oldEnabled == newEnabled {
+		utils.Logf("[配置更新] ℹ️  每日积分统计配置无变化，跳过处理")
+		return
+	}
+
+	if newEnabled {
+		// 启用每日积分统计任务
+		if !s.dailyUsageTracker.IsActive() {
+			if err := s.dailyUsageTracker.Start(); err != nil {
+				utils.Logf("[配置更新] ❌ 启用每日积分统计任务失败: %v", err)
+			} else {
+				utils.Logf("[配置更新] ✅ 每日积分统计任务已启用")
+			}
+		} else {
+			utils.Logf("[配置更新] ℹ️  每日积分统计任务已在运行中")
+		}
+	} else {
+		// 停止每日积分统计任务
+		if s.dailyUsageTracker.IsActive() {
+			if err := s.dailyUsageTracker.Stop(); err != nil {
+				utils.Logf("[配置更新] ❌ 停止每日积分统计任务失败: %v", err)
+			} else {
+				utils.Logf("[配置更新] ✅ 每日积分统计任务已停止")
+			}
+		} else {
+			utils.Logf("[配置更新] ℹ️  每日积分统计任务已停止")
+		}
+	}
+}
+
+// GetDailyUsageTracker 获取每日积分统计服务引用
+func (s *SchedulerService) GetDailyUsageTracker() *DailyUsageTracker {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.dailyUsageTracker
+}
+
+// GetWeeklyUsage 获取最近一周的积分使用统计
+func (s *SchedulerService) GetWeeklyUsage() (models.DailyUsageList, error) {
+	s.mu.RLock()
+	tracker := s.dailyUsageTracker
+	s.mu.RUnlock()
+
+	if tracker == nil {
+		return nil, fmt.Errorf("每日积分统计服务未初始化")
+	}
+
+	return tracker.GetWeeklyUsage()
+}
+
+// GetConfig 获取当前配置
+func (s *SchedulerService) GetConfig() *models.UserConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.config
+}
+
+// AddDailyUsageListener 添加每日积分统计监听器
+func (s *SchedulerService) AddDailyUsageListener() chan []models.DailyUsage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	listener := make(chan []models.DailyUsage, 10)
+	s.dailyUsageListeners = append(s.dailyUsageListeners, listener)
+	return listener
+}
+
+// RemoveDailyUsageListener 移除每日积分统计监听器
+func (s *SchedulerService) RemoveDailyUsageListener(listener chan []models.DailyUsage) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i, l := range s.dailyUsageListeners {
+		if l == listener {
+			close(l)
+			s.dailyUsageListeners = append(s.dailyUsageListeners[:i], s.dailyUsageListeners[i+1:]...)
+			break
+		}
+	}
+}
+
+// BroadcastDailyUsage 广播每日积分统计数据
+func (s *SchedulerService) BroadcastDailyUsage(data []models.DailyUsage) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, listener := range s.dailyUsageListeners {
+		select {
+		case listener <- data:
+			// 数据发送成功
+		default:
+			// 通道已满，跳过通知
+		}
+	}
 }

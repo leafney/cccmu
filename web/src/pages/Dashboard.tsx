@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { UsageChart } from '../components/UsageChart';
 import { SettingsModal } from '../components/SettingsModal';
+import { DailyUsageModal } from '../components/DailyUsageModal';
 import { LoginPage } from '../components/LoginPage';
-import type { IUsageData, IUserConfig, IUserConfigRequest, ICreditBalance, IMonitoringStatus } from '../types';
+import type { IUsageData, IUserConfig, IUserConfigRequest, ICreditBalance, IMonitoringStatus, IDailyUsage } from '../types';
 import { apiClient } from '../api/client';
-import { Settings, Wifi, WifiOff, RefreshCw, BarChart3, X } from 'lucide-react';
+import { Settings, Wifi, WifiOff, RefreshCw, BarChart3, X, History } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
 
@@ -17,6 +18,8 @@ export function Dashboard() {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [eventSource, setEventSource] = useState<EventSource | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showDailyUsage, setShowDailyUsage] = useState(false);
+  const [dailyUsageData, setDailyUsageData] = useState<IDailyUsage[]>([]);
   const [creditBalance, setCreditBalance] = useState<ICreditBalance | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
@@ -124,6 +127,11 @@ export function Dashboard() {
         setIsMonitoring(status.isMonitoring);
       },
       handleAuthExpired, // 认证过期处理
+      (dailyUsage: IDailyUsage[]) => {
+        // 处理每日积分统计数据更新
+        console.debug('收到每日积分统计数据:', dailyUsage);
+        setDailyUsageData(dailyUsage);
+      },
       timeRange
     );
 
@@ -515,79 +523,109 @@ export function Dashboard() {
             </button>
           )}
 
-          {/* 开关组 - 竖向排列 */}
-          <div className="flex flex-col space-y-2">
-            {/* 监控状态开关 */}
-            <div className="flex items-center space-x-2">
-              <span className="text-xs text-white/80 hidden md:block">监控</span>
-              <button
-                onClick={toggleMonitoring}
-                disabled={!config?.cookie || !isConnected || monitoringStatus?.autoScheduleEnabled}
-                className={`relative inline-flex h-4 w-8 items-center rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50 ${
-                  isMonitoring ? 'bg-green-500' : 'bg-gray-600'
-                } ${
-                  monitoringStatus?.autoScheduleEnabled 
-                    ? 'ring-2 ring-orange-400/75 shadow-lg shadow-orange-400/25 animate-pulse' 
-                    : ''
-                }`}
-                title={
-                  monitoringStatus?.autoScheduleEnabled 
-                    ? "自动调度已启用，无法手动操作" 
-                    : !isConnected 
-                    ? "请等待连接建立" 
-                    : !config?.cookie 
-                    ? "请先配置Cookie" 
-                    : "切换监控状态"
-                }
-              >
-                <span
-                  className={`inline-block h-3 w-3 transform rounded-full bg-white transition ${
-                    isMonitoring ? 'translate-x-4' : 'translate-x-0.5'
+          {/* 控制区域布局 - 三列布局 */}
+          <div className="flex items-center space-x-2">
+            {/* 左列 - 开关组 */}
+            <div className="flex flex-col space-y-1.5">
+              {/* 监控状态开关 */}
+              <div className="flex items-center space-x-2">
+                <span className="text-xs text-white/80 hidden md:block min-w-[2rem]">监控</span>
+                <button
+                  onClick={toggleMonitoring}
+                  disabled={!config?.cookie || !isConnected || monitoringStatus?.autoScheduleEnabled}
+                  className={`relative inline-flex h-4 w-8 items-center rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50 ${
+                    isMonitoring ? 'bg-green-500' : 'bg-gray-600'
+                  } ${
+                    monitoringStatus?.autoScheduleEnabled 
+                      ? 'ring-2 ring-orange-400/75 shadow-lg shadow-orange-400/25 animate-pulse' 
+                      : ''
                   }`}
-                />
+                  title={
+                    monitoringStatus?.autoScheduleEnabled 
+                      ? "自动调度已启用，无法手动操作" 
+                      : !isConnected 
+                      ? "请等待连接建立" 
+                      : !config?.cookie 
+                      ? "请先配置Cookie" 
+                      : "切换监控状态"
+                  }
+                >
+                  <span
+                    className={`inline-block h-3 w-3 transform rounded-full bg-white transition ${
+                      isMonitoring ? 'translate-x-4' : 'translate-x-0.5'
+                    }`}
+                  />
+                </button>
+              </div>
+              
+              {/* 自动重置开关 */}
+              <div className="flex items-center space-x-2">
+                <span className="text-xs text-white/80 hidden md:block min-w-[2rem]">重置</span>
+                <button
+                  onClick={toggleAutoReset}
+                  disabled={!config?.cookie || !isConnected}
+                  className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50 ${
+                    isAutoResetEnabled ? 'bg-purple-500' : 'bg-gray-600'
+                  }`}
+                  title={!config?.cookie ? "请先配置Cookie" : !isConnected ? "请等待连接建立" : "切换自动重置状态"}
+                >
+                  <span
+                    className={`inline-block h-3 w-3 transform rounded-full bg-white transition ${
+                      isAutoResetEnabled ? 'translate-x-4' : 'translate-x-0.5'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+
+            {/* 中列 - 历史统计按钮组 */}
+            {config?.dailyUsageEnabled && (
+              <div className="flex flex-col space-y-1.5">
+                {/* 历史统计按钮 */}
+                <button
+                  onClick={async () => {
+                    try {
+                      // 触发后端数据获取
+                      await apiClient.getHistory();
+                      // 显示弹窗
+                      setShowDailyUsage(true);
+                    } catch (error) {
+                      console.error('触发积分历史统计失败:', error);
+                      toast.error('获取统计数据失败');
+                    }
+                  }}
+                  className="p-1 text-white/80 hover:text-white hover:bg-white/10 rounded-md transition-colors"
+                  title="查看历史积分使用统计"
+                >
+                  <History className="w-3.5 h-3.5" />
+                </button>
+                
+                {/* 预留位置 - 备用按钮 */}
+                <div className="w-[20px] h-[20px]"></div>
+              </div>
+            )}
+
+            {/* 右列 - 功能按钮组 */}
+            <div className="flex flex-col space-y-1.5">
+              {/* 手动刷新按钮 */}
+              <button
+                onClick={handleRefresh}
+                disabled={!config?.cookie || isRefreshing || !isConnected}
+                className="p-1 text-white/80 hover:text-white hover:bg-white/10 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title={!isConnected ? "请等待连接建立" : !config?.cookie ? "请先配置Cookie" : "手动刷新数据"}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+              </button>
+
+              {/* 设置按钮 */}
+              <button
+                onClick={() => setShowSettings(true)}
+                className="p-1 text-white/80 hover:text-white hover:bg-white/10 rounded-md transition-colors"
+                title="打开设置"
+              >
+                <Settings className="w-3.5 h-3.5" />
               </button>
             </div>
-            
-            {/* 自动重置开关 */}
-            <div className="flex items-center space-x-2">
-              <span className="text-xs text-white/80 hidden md:block">重置</span>
-              <button
-                onClick={toggleAutoReset}
-                disabled={!config?.cookie || !isConnected}
-                className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50 ${
-                  isAutoResetEnabled ? 'bg-purple-500' : 'bg-gray-600'
-                }`}
-                title={!config?.cookie ? "请先配置Cookie" : !isConnected ? "请等待连接建立" : "切换自动重置状态"}
-              >
-                <span
-                  className={`inline-block h-3 w-3 transform rounded-full bg-white transition ${
-                    isAutoResetEnabled ? 'translate-x-4' : 'translate-x-0.5'
-                  }`}
-                />
-              </button>
-            </div>
-          </div>
-
-          {/* 图标按钮组 - 竖向排列 */}
-          <div className="flex flex-col space-y-1.5">
-            {/* 手动刷新按钮 */}
-            <button
-              onClick={handleRefresh}
-              disabled={!config?.cookie || isRefreshing || !isConnected}
-              className="p-1 text-white/80 hover:text-white hover:bg-white/10 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              title={!isConnected ? "请等待连接建立" : !config?.cookie ? "请先配置Cookie" : "手动刷新数据"}
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-            </button>
-
-            {/* 设置按钮 */}
-            <button
-              onClick={() => setShowSettings(true)}
-              className="p-1 text-white/80 hover:text-white hover:bg-white/10 rounded-md transition-colors"
-              title="打开设置"
-            >
-              <Settings className="w-3.5 h-3.5" />
-            </button>
           </div>
         </div>
       </div>
@@ -621,6 +659,13 @@ export function Dashboard() {
         isMonitoring={isMonitoring}
         monitoringStatus={monitoringStatus}
         onMonitoringChange={setIsMonitoring}
+      />
+
+      {/* 每日积分统计弹窗 */}
+      <DailyUsageModal
+        isOpen={showDailyUsage}
+        onClose={() => setShowDailyUsage(false)}
+        data={dailyUsageData}
       />
 
       {/* 重置积分确认弹窗 */}
