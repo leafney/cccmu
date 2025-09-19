@@ -215,8 +215,9 @@ func (d *DailyUsageTracker) collectHourlyUsage() error {
 
 	for _, data := range usageData {
 		if recordCount == 0 {
-			oldestRecord = data.CreatedAt
-			newestRecord = data.CreatedAt
+			lastData := usageData[len(usageData)-1]
+			oldestRecord = lastData.CreatedAt
+			newestRecord = lastData.CreatedAt
 		} else {
 			if data.CreatedAt.Before(oldestRecord) {
 				oldestRecord = data.CreatedAt
