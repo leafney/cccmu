@@ -30,6 +30,9 @@ func NewDailyUsageTracker(db *database.BadgerDB, apiClient *client.ClaudeAPIClie
 		return nil, fmt.Errorf("创建每日积分统计调度器失败: %w", err)
 	}
 
+	// 启动调度器（调度器始终运行，任务按需添加/移除）
+	scheduler.Start()
+
 	return &DailyUsageTracker{
 		db:            db,
 		apiClient:     apiClient,
@@ -107,7 +110,7 @@ func (d *DailyUsageTracker) IsActive() bool {
 	return d.isActive
 }
 
-// Start 启动定时任务
+// Start 启动定时任务（在运行的调度器中添加任务）
 func (d *DailyUsageTracker) Start() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -121,19 +124,13 @@ func (d *DailyUsageTracker) Start() error {
 		return nil
 	}
 
-	// 如果调度器被关闭了，重新创建
+	// 调度器应该已经在创建时启动，这里只需要添加任务
 	if d.scheduler == nil {
-		utils.Logf("[每日积分统计] 🔄 重新创建调度器...")
-		scheduler, err := gocron.NewScheduler()
-		if err != nil {
-			utils.Logf("[每日积分统计] ❌ 创建调度器失败: %v", err)
-			return fmt.Errorf("创建调度器失败: %w", err)
-		}
-		d.scheduler = scheduler
-		utils.Logf("[每日积分统计] ✅ 调度器已重新创建")
+		return fmt.Errorf("调度器不存在，服务可能未正确初始化")
 	}
 
-	// 创建新的定时任务
+	// 在现有调度器中创建新的定时任务
+	utils.Logf("[每日积分统计] 🔄 在调度器中添加定时任务...")
 	job, err := d.scheduler.NewJob(
 		gocron.CronJob("0 * * * *", false), // 每小时整点执行
 		gocron.NewTask(d.collectHourlyUsage),
@@ -147,12 +144,7 @@ func (d *DailyUsageTracker) Start() error {
 	d.job = job
 	d.isActive = true
 
-	// 启动独立调度器
-	utils.Logf("[每日积分统计] 🚀 启动独立调度器...")
-	d.scheduler.Start()
-	utils.Logf("[每日积分统计] ✅ 独立调度器已启动")
-
-	utils.Logf("[每日积分统计] ✅ 任务已启动")
+	utils.Logf("[每日积分统计] ✅ 定时任务已添加到调度器")
 	utils.Logf("[每日积分统计] 📋 任务ID: %v", job.ID())
 
 	// 计算下次执行时间
@@ -163,7 +155,7 @@ func (d *DailyUsageTracker) Start() error {
 	return nil
 }
 
-// Stop 停止定时任务
+// Stop 停止定时任务（从调度器中移除任务，但保持调度器运行）
 func (d *DailyUsageTracker) Stop() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -173,21 +165,19 @@ func (d *DailyUsageTracker) Stop() error {
 		return nil
 	}
 
-	// 停止调度器并移除任务
-	if d.scheduler != nil {
-		utils.Logf("[每日积分统计] 🛑 停止独立调度器...")
-		d.scheduler.StopJobs()
-		if err := d.scheduler.Shutdown(); err != nil {
-			utils.Logf("[每日积分统计] ⚠️  关闭调度器失败: %v", err)
+	// 从调度器中移除任务，但保持调度器运行
+	if d.scheduler != nil && d.job != nil {
+		utils.Logf("[每日积分统计] 🛑 从调度器中移除定时任务...")
+		if err := d.scheduler.RemoveJob(d.job.ID()); err != nil {
+			utils.Logf("[每日积分统计] ⚠️  移除任务失败: %v", err)
 		} else {
-			utils.Logf("[每日积分统计] ✅ 独立调度器已停止")
+			utils.Logf("[每日积分统计] ✅ 定时任务已从调度器中移除")
 		}
-		d.scheduler = nil // 置空调度器，下次启动时重新创建
 		d.job = nil
 	}
 
 	d.isActive = false
-	utils.Logf("[每日积分统计] ✅ 任务已停止")
+	utils.Logf("[每日积分统计] ✅ 任务已停止（调度器继续运行，随时可重新添加任务）")
 
 	return nil
 }
