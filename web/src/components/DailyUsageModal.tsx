@@ -72,17 +72,19 @@ export function DailyUsageModal({ isOpen, onClose, data }: DailyUsageModalProps)
 
     // 模型颜色映射
     const modelColors: { [key: string]: string } = {
-      'claude-3-5-sonnet': '#3B82F6',    // 蓝色
-      'claude-3-haiku': '#F97316',       // 橙色  
-      'claude-3-opus': '#8B5CF6',        // 紫色
-      'claude-3-sonnet': '#10B981',      // 绿色
-      'claude-2.1': '#F59E0B',           // 黄色
-      'claude-2.0': '#EF4444',           // 红色
-      'claude-instant': '#06B6D4',       // 青色
+      'claude-sonnet-4-20250514': '#3B82F6',    // 蓝色
+      'gpt-5-codex': '#F97316',       // 橙色  
     };
 
     // 为未知模型分配默认颜色
-    const defaultColors = ['#64748B', '#84CC16', '#EC4899', '#14B8A6', '#F472B6'];
+    const defaultColors = [
+      '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#06B6D4',
+      '#64748B', '#84CC16', '#EC4899', '#14B8A6', '#F472B6',
+      '#8B5A2B', '#6366F1', '#DC2626', '#059669', '#7C3AED',
+      '#EA580C', '#0891B2', '#BE185D', '#7C2D12', '#374151',
+      '#4338CA', '#16A34A', '#CA8A04', '#C2410C', '#BE123C',
+      '#15803D', '#1E40AF', '#9333EA', '#0369A1', '#DC2626'
+    ];
     let colorIndex = 0;
 
     // 计算总积分最大值用于Y轴范围设置
@@ -92,7 +94,7 @@ export function DailyUsageModal({ isOpen, onClose, data }: DailyUsageModalProps)
     // 图表配置
     const option = {
       title: {
-        text: '最近一周每日积分使用量（按模型分组）',
+        text: '最近一周每日积分使用量',
         left: 'center',
         top: '2%',
         textStyle: {
