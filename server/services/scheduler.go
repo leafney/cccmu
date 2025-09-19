@@ -17,7 +17,7 @@ import (
 // SchedulerService 定时任务服务
 type SchedulerService struct {
 	scheduler             gocron.Scheduler
-	dailyResetScheduler   gocron.Scheduler     // 单独的每日重置任务调度器
+	dailyResetScheduler   gocron.Scheduler // 单独的每日重置任务调度器
 	db                    *database.BadgerDB
 	apiClient             *client.ClaudeAPIClient
 	config                *models.UserConfig
@@ -30,12 +30,12 @@ type SchedulerService struct {
 	errorListeners        []chan string
 	resetStatusListeners  []chan bool
 	autoScheduler         *AutoSchedulerService
-	autoScheduleListeners []chan bool              // 自动调度状态变化监听器
+	autoScheduleListeners []chan bool                // 自动调度状态变化监听器
 	dailyUsageListeners   []chan []models.DailyUsage // 每日积分统计数据监听器
-	balanceJob            gocron.Job               // 积分余额任务引用
-	balanceTaskPaused     bool                     // 积分余额任务暂停状态
-	autoResetService      *AutoResetService        // 自动重置服务引用
-	dailyUsageTracker     *DailyUsageTracker       // 每日积分统计跟踪服务
+	balanceJob            gocron.Job                 // 积分余额任务引用
+	balanceTaskPaused     bool                       // 积分余额任务暂停状态
+	autoResetService      *AutoResetService          // 自动重置服务引用
+	dailyUsageTracker     *DailyUsageTracker         // 每日积分统计跟踪服务
 }
 
 // NewSchedulerService 创建新的调度服务
@@ -84,29 +84,30 @@ func NewSchedulerService(db *database.BadgerDB) (*SchedulerService, error) {
 	} else {
 		service.dailyUsageTracker = dailyUsageTracker
 		utils.Logf("[调度器] ✅ 每日积分统计服务创建成功")
-		
+
 		// 立即初始化每日积分统计服务（程序启动时就初始化）
-		if err := dailyUsageTracker.Initialize(service.scheduler); err != nil {
+		if err := dailyUsageTracker.Initialize(); err != nil {
 			utils.Logf("[调度器] ❌ 初始化每日积分统计服务失败: %v", err)
 		} else {
 			utils.Logf("[调度器] ✅ 每日积分统计服务已初始化")
-			
+
 			// 根据配置的初始状态决定是否启动任务
 			if config.DailyUsageEnabled {
+				utils.Logf("[调度器] 🔄 配置启用每日积分统计，正在启动任务...")
 				if err := dailyUsageTracker.Start(); err != nil {
 					utils.Logf("[调度器] ❌ 初始化时启动每日积分统计任务失败: %v", err)
 				} else {
 					utils.Logf("[调度器] ✅ 每日积分统计任务已在初始化时激活")
 				}
 			} else {
-				utils.Logf("[调度器] ℹ️  每日积分统计功能已禁用，任务未激活")
+				utils.Logf("[调度器] ℹ️  每日积分统计功能已禁用(DailyUsageEnabled=false)，任务未激活")
 			}
 		}
 	}
 
 	// 立即创建每日重置任务（只需创建一次）
 	if err := service.createDailyResetTask(); err != nil {
-		log.Printf("创建每日重置任务失败: %v", err)
+		utils.Logf("[调度器] ❌ 创建每日重置任务失败: %v", err)
 	}
 
 	return service, nil
@@ -466,10 +467,10 @@ func (s *SchedulerService) UpdateConfigSync(newConfig *models.UserConfig) error 
 	s.mu.Unlock()
 
 	log.Printf("[同步配置] 配置已同步保存到数据库")
-	
+
 	// 处理每日积分统计配置变更
 	s.handleDailyUsageConfigChange(oldConfig, newConfig)
-	
+
 	return nil
 }
 
@@ -1327,7 +1328,7 @@ func (s *SchedulerService) handleDailyUsageConfigChange(oldConfig, newConfig *mo
 
 	oldEnabled := oldConfig != nil && oldConfig.DailyUsageEnabled
 	newEnabled := newConfig.DailyUsageEnabled
-	
+
 	utils.Logf("[配置更新] 🔄 检查每日积分统计配置变更: %v -> %v", oldEnabled, newEnabled)
 
 	// 配置没有变化，无需处理

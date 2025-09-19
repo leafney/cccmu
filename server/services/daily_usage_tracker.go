@@ -14,29 +14,34 @@ import (
 
 // DailyUsageTracker 每日积分使用量跟踪服务
 type DailyUsageTracker struct {
-	db           *database.BadgerDB
-	apiClient    *client.ClaudeAPIClient
-	parentSched  gocron.Scheduler // 使用主调度器
-	job          gocron.Job       // 定时任务引用
-	isActive     bool             // 任务是否激活状态
-	isInitialized bool            // 是否已初始化
-	mu           sync.RWMutex
+	db            *database.BadgerDB
+	apiClient     *client.ClaudeAPIClient
+	scheduler     gocron.Scheduler // 独立调度器
+	job           gocron.Job       // 定时任务引用
+	isActive      bool             // 任务是否激活状态
+	isInitialized bool             // 是否已初始化
+	mu            sync.RWMutex
 }
 
 // NewDailyUsageTracker 创建每日积分跟踪服务
 func NewDailyUsageTracker(db *database.BadgerDB, apiClient *client.ClaudeAPIClient) (*DailyUsageTracker, error) {
+	scheduler, err := gocron.NewScheduler()
+	if err != nil {
+		return nil, fmt.Errorf("创建每日积分统计调度器失败: %w", err)
+	}
+
 	return &DailyUsageTracker{
 		db:            db,
 		apiClient:     apiClient,
-		parentSched:   nil, // 将在初始化时设置
+		scheduler:     scheduler,
 		job:           nil,
 		isActive:      false,
 		isInitialized: false,
 	}, nil
 }
 
-// Initialize 使用主调度器初始化服务
-func (d *DailyUsageTracker) Initialize(parentScheduler gocron.Scheduler) error {
+// Initialize 初始化服务
+func (d *DailyUsageTracker) Initialize() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -45,10 +50,9 @@ func (d *DailyUsageTracker) Initialize(parentScheduler gocron.Scheduler) error {
 		return nil
 	}
 
-	d.parentSched = parentScheduler
 	d.isInitialized = true
 	utils.Logf("[每日积分统计] ✅ 服务已初始化")
-	
+
 	// 计算下次执行时间（下一个整点）并显示提示
 	now := time.Now()
 	nextRun := now.Truncate(time.Hour).Add(time.Hour)
@@ -70,19 +74,20 @@ func (d *DailyUsageTracker) Shutdown() error {
 
 	utils.Logf("[每日积分统计] 🛑 开始关闭服务...")
 
-	// 移除任务（如果存在）
-	if d.job != nil && d.parentSched != nil {
-		if err := d.parentSched.RemoveJob(d.job.ID()); err != nil {
-			utils.Logf("[每日积分统计] ⚠️  移除任务失败: %v", err)
+	// 停止调度器
+	if d.scheduler != nil {
+		d.scheduler.StopJobs()
+		if err := d.scheduler.Shutdown(); err != nil {
+			utils.Logf("[每日积分统计] ⚠️  关闭调度器失败: %v", err)
 		} else {
-			utils.Logf("[每日积分统计] ✅ 任务已移除")
+			utils.Logf("[每日积分统计] ✅ 调度器已关闭")
 		}
-		d.job = nil
+		d.scheduler = nil
 	}
 
 	d.isActive = false
 	d.isInitialized = false
-	d.parentSched = nil
+	d.job = nil
 	utils.Logf("[每日积分统计] ✅ 服务已完全关闭")
 
 	return nil
@@ -116,8 +121,20 @@ func (d *DailyUsageTracker) Start() error {
 		return nil
 	}
 
+	// 如果调度器被关闭了，重新创建
+	if d.scheduler == nil {
+		utils.Logf("[每日积分统计] 🔄 重新创建调度器...")
+		scheduler, err := gocron.NewScheduler()
+		if err != nil {
+			utils.Logf("[每日积分统计] ❌ 创建调度器失败: %v", err)
+			return fmt.Errorf("创建调度器失败: %w", err)
+		}
+		d.scheduler = scheduler
+		utils.Logf("[每日积分统计] ✅ 调度器已重新创建")
+	}
+
 	// 创建新的定时任务
-	job, err := d.parentSched.NewJob(
+	job, err := d.scheduler.NewJob(
 		gocron.CronJob("0 * * * *", false), // 每小时整点执行
 		gocron.NewTask(d.collectHourlyUsage),
 		gocron.WithSingletonMode(gocron.LimitModeReschedule),
@@ -129,9 +146,15 @@ func (d *DailyUsageTracker) Start() error {
 
 	d.job = job
 	d.isActive = true
+
+	// 启动独立调度器
+	utils.Logf("[每日积分统计] 🚀 启动独立调度器...")
+	d.scheduler.Start()
+	utils.Logf("[每日积分统计] ✅ 独立调度器已启动")
+
 	utils.Logf("[每日积分统计] ✅ 任务已启动")
 	utils.Logf("[每日积分统计] 📋 任务ID: %v", job.ID())
-	
+
 	// 计算下次执行时间
 	now := time.Now()
 	nextRun := now.Truncate(time.Hour).Add(time.Hour)
@@ -150,14 +173,16 @@ func (d *DailyUsageTracker) Stop() error {
 		return nil
 	}
 
-	// 移除任务
-	if d.job != nil && d.parentSched != nil {
-		if err := d.parentSched.RemoveJob(d.job.ID()); err != nil {
-			utils.Logf("[每日积分统计] ⚠️  移除任务失败: %v", err)
-			// 不返回错误，继续执行
+	// 停止调度器并移除任务
+	if d.scheduler != nil {
+		utils.Logf("[每日积分统计] 🛑 停止独立调度器...")
+		d.scheduler.StopJobs()
+		if err := d.scheduler.Shutdown(); err != nil {
+			utils.Logf("[每日积分统计] ⚠️  关闭调度器失败: %v", err)
 		} else {
-			utils.Logf("[每日积分统计] ✅ 任务已移除")
+			utils.Logf("[每日积分统计] ✅ 独立调度器已停止")
 		}
+		d.scheduler = nil // 置空调度器，下次启动时重新创建
 		d.job = nil
 	}
 
@@ -252,14 +277,14 @@ func (d *DailyUsageTracker) collectHourlyUsage() error {
 
 	// 计算统计时间范围
 	endTime := time.Now()
-	utils.Logf("[每日积分统计] ✅ 日期 %s %s ~ %s 共统计 %d 条数据，积分 %d，积分变动 %d → %d，(耗时 %v)", 
-		localDate, 
-		oneHourAgo.In(time.Local).Format("15:04:05"), 
+	utils.Logf("[每日积分统计] ✅ 日期 %s %s ~ %s 共统计 %d 条数据，积分 %d，积分变动 %d → %d，(耗时 %v)",
+		localDate,
+		oneHourAgo.In(time.Local).Format("15:04:05"),
 		endTime.Format("15:04:05"),
-		recordCount, 
-		hourlyCredits, 
-		beforeCredits, 
-		afterCredits, 
+		recordCount,
+		hourlyCredits,
+		beforeCredits,
+		afterCredits,
 		elapsedTime)
 
 	// 执行数据清理任务（保留7天数据）
