@@ -232,7 +232,7 @@ jobs:
           
           ### ⚡ 版本信息
           - **版本**: ${{ github.ref_name }}
-          - **提交**: ${GITHUB_SHA:0:8}
+          - **提交**: ${COMMIT}
           - **构建时间**: BUILD_TIME_PLACEHOLDER
           
           ### 🔒 文件校验
@@ -245,8 +245,9 @@ jobs:
           ```
           EOF
           
-          # 替换构建时间占位符
+          # 替换占位符
           sed -i "s/BUILD_TIME_PLACEHOLDER/${BUILD_TIME}/" release-notes.md
+          sed -i "s/\${COMMIT}/${COMMIT}/" release-notes.md
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
