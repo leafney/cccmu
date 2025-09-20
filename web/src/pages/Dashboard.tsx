@@ -366,6 +366,9 @@ export function Dashboard() {
     const loadingToastId = toast.loading('正在刷新数据...');
 
     try {
+      // 清空当前图表数据，避免新旧数据混合显示
+      setUsageData([]);
+      
       // 使用统一刷新接口，一次请求同时刷新使用数据和积分余额
       await fetch('/api/refresh', { method: 'POST' });
       
