@@ -213,18 +213,19 @@ func (d *DailyUsageTracker) collectHourlyUsage() error {
 	utils.Logf("[每日积分统计] 🔍 分析时间范围: %s 至 %s",
 		oneHourAgo.In(time.Local).Format("15:04:05"), time.Now().Format("15:04:05"))
 
+	// 初始化时间范围（使用第一条数据）
+	if len(usageData) > 0 {
+		oldestRecord = usageData[0].CreatedAt
+		newestRecord = usageData[0].CreatedAt
+	}
+
 	for _, data := range usageData {
-		if recordCount == 0 {
-			lastData := usageData[len(usageData)-1]
-			oldestRecord = lastData.CreatedAt
-			newestRecord = lastData.CreatedAt
-		} else {
-			if data.CreatedAt.Before(oldestRecord) {
-				oldestRecord = data.CreatedAt
-			}
-			if data.CreatedAt.After(newestRecord) {
-				newestRecord = data.CreatedAt
-			}
+		// 更新时间范围
+		if data.CreatedAt.Before(oldestRecord) {
+			oldestRecord = data.CreatedAt
+		}
+		if data.CreatedAt.After(newestRecord) {
+			newestRecord = data.CreatedAt
 		}
 
 		// 将UTC时间与UTC时间比较
@@ -237,6 +238,18 @@ func (d *DailyUsageTracker) collectHourlyUsage() error {
 				modelCredits[data.Model] += data.CreditsUsed
 			}
 		}
+	}
+
+	// 如果没有符合条件的数据，找到时间上最新的数据
+	if recordCount == 0 && len(usageData) > 0 {
+		newestTime := usageData[0].CreatedAt
+		for _, data := range usageData {
+			if data.CreatedAt.After(newestTime) {
+				newestTime = data.CreatedAt
+			}
+		}
+		oldestRecord = newestTime
+		newestRecord = newestTime
 	}
 
 	if totalRecords > 0 {
