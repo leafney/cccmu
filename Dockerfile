@@ -45,8 +45,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # Stage 3: Final runtime image
 FROM alpine:latest
 
-# Install ca-certificates for HTTPS requests and wget for health check
-RUN apk --no-cache add ca-certificates tzdata wget
+# Install runtime依赖及权限工具
+RUN apk --no-cache add ca-certificates tzdata wget shadow su-exec
 
 # Set timezone to Asia/Shanghai
 ENV TZ=Asia/Shanghai
@@ -61,9 +61,9 @@ WORKDIR /app
 # Copy binary from builder
 COPY --from=backend-builder /app/cccmu .
 
-# Change ownership to non-root user
-RUN chown -R appuser:appuser /app
-USER appuser
+# 复制入口脚本并赋权
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Expose port
 EXPOSE 8080
@@ -72,5 +72,9 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
 
-# Run the binary
+# 默认工作目录准备数据目录
+RUN mkdir -p /app/data
+
+# Entrypoint 负责权限调整，最终执行主进程
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["./cccmu"]
