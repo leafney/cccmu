@@ -202,9 +202,17 @@ jobs:
           echo '```' >> release-notes.md
           echo "" >> release-notes.md
           echo "#### 📋 支持的平台" >> release-notes.md
-          echo "- **Windows**: `cccmu-windows-amd64.zip`" >> release-notes.md
-          echo "- **macOS**: `cccmu-darwin-amd64.zip`, `cccmu-darwin-arm64.zip`" >> release-notes.md  
-          echo "- **Linux**: `cccmu-linux-amd64.zip`, `cccmu-linux-arm64.zip`" >> release-notes.md
+          echo "" >> release-notes.md
+          echo "**Windows**" >> release-notes.md
+          echo "- amd64 (x86_64): `cccmu-windows-amd64.zip`" >> release-notes.md
+          echo "" >> release-notes.md
+          echo "**macOS**" >> release-notes.md
+          echo "- amd64 (Intel): `cccmu-darwin-amd64.zip`" >> release-notes.md
+          echo "- arm64 (Apple Silicon): `cccmu-darwin-arm64.zip`" >> release-notes.md
+          echo "" >> release-notes.md
+          echo "**Linux**" >> release-notes.md
+          echo "- amd64 (x86_64): `cccmu-linux-amd64.zip`" >> release-notes.md
+          echo "- arm64 (ARM64): `cccmu-linux-arm64.zip`" >> release-notes.md
           echo "" >> release-notes.md
           echo "#### 🏃 快速运行" >> release-notes.md
           echo '```bash' >> release-notes.md
