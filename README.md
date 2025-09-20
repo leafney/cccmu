@@ -153,6 +153,9 @@ docker-compose up -d
 # 拉取最新镜像
 docker pull ghcr.io/leafney/cccmu:latest
 
+# 创建数据目录并设置权限
+mkdir -p ./data && chmod 777 ./data
+
 # 运行容器（基础方式）
 docker run -d \
   --name cccmu \
@@ -193,11 +196,16 @@ services:
 ```
 
 ```bash
+# 创建数据目录并设置权限（首次部署时）
+mkdir -p ./data && chmod 777 ./data
+
 # 启动容器
 docker compose up -d
 ```
 
 访问 http://localhost:8080 开始使用。
+
+> **重要提示**：使用数据持久化部署时，需要确保数据目录具有正确的权限，否则容器可能无法写入数据文件。
 
 ### 使用二进制文件
 
@@ -399,6 +407,9 @@ GoVersion: go1.23.1
 通过数据目录映射，密钥文件在容器重启后保持不变。如需管理访问密钥，可以使用以下命令：
 
 ```bash
+# 创建数据目录并设置权限（首次部署时）
+mkdir -p ./data && chmod 777 ./data
+
 # 查看容器中的访问密钥
 docker exec cccmu /bin/sh -c "cat /app/data/auth"
 
@@ -419,7 +430,7 @@ docker restart cccmu
 - 生成时机：应用首次启动或密钥文件不存在时自动生成
 - 重新生成：删除密钥文件后重启容器即可生成新密钥
 - 数据持久化：通过 volumes 映射，密钥和数据库在容器重启后保持不变
-- **简化部署**：无需手动创建或设置数据目录权限，容器会自动处理
+- **权限要求**：使用数据持久化时，需要设置宿主机数据目录权限为 777，确保容器能够正常读写
 
 **安全特性**：
 - 基于 Session 的身份验证机制
