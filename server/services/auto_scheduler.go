@@ -25,6 +25,20 @@ type AutoSchedulerService struct {
 	lastState    bool // 记录上一次的监控状态
 }
 
+// getLastState 获取最近一次记录的监控状态
+func (a *AutoSchedulerService) getLastState() bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.lastState
+}
+
+// setLastState 更新最近一次记录的监控状态
+func (a *AutoSchedulerService) setLastState(state bool) {
+	a.mu.Lock()
+	a.lastState = state
+	a.mu.Unlock()
+}
+
 // NewAutoSchedulerService 创建自动调度服务
 func NewAutoSchedulerService(schedulerSvc *SchedulerService) *AutoSchedulerService {
 	scheduler, err := gocron.NewScheduler()
@@ -38,6 +52,7 @@ func NewAutoSchedulerService(schedulerSvc *SchedulerService) *AutoSchedulerServi
 		scheduler:    scheduler,
 		tasksCreated: false,
 		tasksRunning: false,
+		lastState:    schedulerSvc.IsRunning(),
 	}
 }
 
@@ -451,26 +466,36 @@ func (a *AutoSchedulerService) handleStartTimeTask(config *models.AutoScheduleCo
 	// 计算应该执行的操作
 	shouldMonitoringOn := config.MonitoringOn
 	currentlyOn := a.schedulerSvc.IsRunning()
+	lastRecorded := a.getLastState()
 
 	log.Printf("[自动调度]   📊 当前监控状态: %v", currentlyOn)
 	log.Printf("[自动调度]   🎯 目标监控状态: %v", shouldMonitoringOn)
 
-	if shouldMonitoringOn != currentlyOn {
+	needsChange := shouldMonitoringOn != currentlyOn || lastRecorded != shouldMonitoringOn
+
+	if needsChange {
+		if lastRecorded != shouldMonitoringOn {
+			log.Printf("[自动调度]   🔁 记录状态为: %v，需与目标状态同步", lastRecorded)
+		}
 		log.Printf("[自动调度]   🔄 需要改变监控状态: %v → %v", currentlyOn, shouldMonitoringOn)
 
 		if shouldMonitoringOn {
 			log.Printf("[自动调度]   ▶️  执行操作: 启动监控")
 			if err := a.schedulerSvc.StartAuto(); err != nil {
 				log.Printf("[自动调度]   ❌ 启动监控失败: %v", err)
+				log.Printf("[自动调度]   ⏳ 保持上次记录状态: %v", lastRecorded)
 			} else {
 				log.Printf("[自动调度]   ✅ 监控已成功启动")
+				a.setLastState(shouldMonitoringOn)
 			}
 		} else {
 			log.Printf("[自动调度]   ⏹️  执行操作: 停止监控")
 			if err := a.schedulerSvc.StopAuto(); err != nil {
 				log.Printf("[自动调度]   ❌ 停止监控失败: %v", err)
+				log.Printf("[自动调度]   ⏳ 保持上次记录状态: %v", lastRecorded)
 			} else {
 				log.Printf("[自动调度]   ✅ 监控已成功停止")
+				a.setLastState(shouldMonitoringOn)
 			}
 		}
 
@@ -479,6 +504,7 @@ func (a *AutoSchedulerService) handleStartTimeTask(config *models.AutoScheduleCo
 		log.Printf("[自动调度] 🏁 开始时间任务处理完成")
 	} else {
 		log.Printf("[自动调度]   ✨ 监控状态无需改变 (已是期望状态)")
+		a.setLastState(shouldMonitoringOn)
 		log.Printf("[自动调度] 🏁 开始时间任务处理完成")
 	}
 }
@@ -506,26 +532,36 @@ func (a *AutoSchedulerService) handleEndTimeTask(config *models.AutoScheduleConf
 	// 计算应该执行的操作（结束时间执行相反操作）
 	shouldMonitoringOn := !config.MonitoringOn
 	currentlyOn := a.schedulerSvc.IsRunning()
+	lastRecorded := a.getLastState()
 
 	log.Printf("[自动调度]   📊 当前监控状态: %v", currentlyOn)
 	log.Printf("[自动调度]   🎯 目标监控状态: %v", shouldMonitoringOn)
 
-	if shouldMonitoringOn != currentlyOn {
+	needsChange := shouldMonitoringOn != currentlyOn || lastRecorded != shouldMonitoringOn
+
+	if needsChange {
+		if lastRecorded != shouldMonitoringOn {
+			log.Printf("[自动调度]   🔁 记录状态为: %v，需与目标状态同步", lastRecorded)
+		}
 		log.Printf("[自动调度]   🔄 需要改变监控状态: %v → %v", currentlyOn, shouldMonitoringOn)
 
 		if shouldMonitoringOn {
 			log.Printf("[自动调度]   ▶️  执行操作: 启动监控")
 			if err := a.schedulerSvc.StartAuto(); err != nil {
 				log.Printf("[自动调度]   ❌ 启动监控失败: %v", err)
+				log.Printf("[自动调度]   ⏳ 保持上次记录状态: %v", lastRecorded)
 			} else {
 				log.Printf("[自动调度]   ✅ 监控已成功启动")
+				a.setLastState(shouldMonitoringOn)
 			}
 		} else {
 			log.Printf("[自动调度]   ⏹️  执行操作: 停止监控")
 			if err := a.schedulerSvc.StopAuto(); err != nil {
 				log.Printf("[自动调度]   ❌ 停止监控失败: %v", err)
+				log.Printf("[自动调度]   ⏳ 保持上次记录状态: %v", lastRecorded)
 			} else {
 				log.Printf("[自动调度]   ✅ 监控已成功停止")
+				a.setLastState(shouldMonitoringOn)
 			}
 		}
 
@@ -534,6 +570,7 @@ func (a *AutoSchedulerService) handleEndTimeTask(config *models.AutoScheduleConf
 		log.Printf("[自动调度] 🏁 结束时间任务处理完成")
 	} else {
 		log.Printf("[自动调度]   ✨ 监控状态无需改变 (已是期望状态)")
+		a.setLastState(shouldMonitoringOn)
 		log.Printf("[自动调度] 🏁 结束时间任务处理完成")
 	}
 }
@@ -678,7 +715,7 @@ func (a *AutoSchedulerService) setInitialState() {
 		log.Printf("[自动调度] ✅ 初始状态检查完成")
 	}
 
-	a.lastState = shouldMonitoringBeOn
+	a.setLastState(shouldMonitoringBeOn)
 }
 
 // Close 关闭自动调度服务
