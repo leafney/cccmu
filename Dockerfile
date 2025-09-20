@@ -57,14 +57,8 @@ WORKDIR /app
 # Copy binary from builder
 COPY --from=backend-builder /app/cccmu .
 
-# Create non-root user
-RUN addgroup -g 1000 appgroup && \
-    adduser -D -s /bin/sh -u 1000 -G appgroup appuser
-
-# Create data directory with proper permissions
-RUN mkdir -p /app/data && \
-    chown -R appuser:appgroup /app && \
-    chmod 755 /app/data
+# Create data directory with full permissions
+RUN mkdir -p /app/data && chmod 755 /app/data
 
 # Expose port
 EXPOSE 8080
@@ -73,8 +67,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
 
-# Switch to non-root user
-USER appuser
-
-# Run application
+# Run as root for maximum compatibility with volume mounts
 CMD ["./cccmu"]
