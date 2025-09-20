@@ -192,52 +192,61 @@ jobs:
 
       - name: Generate release notes
         run: |
-          echo "## 🚀 cccmu ${{ github.ref_name }} 发布" > release-notes.md
-          echo "" >> release-notes.md
-          echo "### 📦 下载" >> release-notes.md
-          echo "" >> release-notes.md
-          echo "#### 🐳 Docker 镜像" >> release-notes.md
-          echo '```bash' >> release-notes.md
-          echo "docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}" >> release-notes.md
-          echo '```' >> release-notes.md
-          echo "" >> release-notes.md
-          echo "#### 📋 支持的平台" >> release-notes.md
-          echo "" >> release-notes.md
-          echo "**Windows**" >> release-notes.md
-          echo "- amd64 (x86_64): `cccmu-windows-amd64.zip`" >> release-notes.md
-          echo "" >> release-notes.md
-          echo "**macOS**" >> release-notes.md
-          echo "- amd64 (Intel): `cccmu-darwin-amd64.zip`" >> release-notes.md
-          echo "- arm64 (Apple Silicon): `cccmu-darwin-arm64.zip`" >> release-notes.md
-          echo "" >> release-notes.md
-          echo "**Linux**" >> release-notes.md
-          echo "- amd64 (x86_64): `cccmu-linux-amd64.zip`" >> release-notes.md
-          echo "- arm64 (ARM64): `cccmu-linux-arm64.zip`" >> release-notes.md
-          echo "" >> release-notes.md
-          echo "#### 🏃 快速运行" >> release-notes.md
-          echo '```bash' >> release-notes.md
-          echo "# 下载zip包并解压运行" >> release-notes.md
-          echo "unzip cccmu-linux-amd64.zip" >> release-notes.md
-          echo "chmod +x cccmu-linux-amd64" >> release-notes.md
-          echo "./cccmu-linux-amd64" >> release-notes.md
-          echo "" >> release-notes.md
-          echo "# 或使用Docker" >> release-notes.md
-          echo "docker run -p 8080:8080 ghcr.io/${{ github.repository }}:${{ github.ref_name }}" >> release-notes.md
-          echo '```' >> release-notes.md
-          echo "" >> release-notes.md
-          echo "### ⚡ 版本信息" >> release-notes.md
-          echo "- **版本**: ${{ github.ref_name }}" >> release-notes.md
-          echo "- **提交**: ${GITHUB_SHA:0:8}" >> release-notes.md
-          echo "- **构建时间**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> release-notes.md
-          echo "" >> release-notes.md
-          echo "### 🔒 文件校验" >> release-notes.md
-          echo "每个 zip 包中都包含对应的 SHA256 校验文件，请解压后验证二进制文件完整性：" >> release-notes.md
-          echo '```bash' >> release-notes.md
-          echo "# 解压zip包" >> release-notes.md
-          echo "unzip cccmu-linux-amd64.zip" >> release-notes.md
-          echo "# 验证文件完整性" >> release-notes.md
-          echo "sha256sum -c cccmu-linux-amd64.sha256" >> release-notes.md
-          echo '```' >> release-notes.md
+          VERSION="${{ github.ref_name }}"
+          COMMIT="${GITHUB_SHA:0:8}"
+          BUILD_TIME="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          
+          cat > release-notes.md << 'EOF'
+          ## 🚀 cccmu ${{ github.ref_name }} 发布
+          
+          ### 📦 下载
+          
+          #### 🐳 Docker 镜像
+          ```bash
+          docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+          ```
+          
+          #### 📋 支持的平台
+          
+          **Windows**
+          - amd64 (x86_64): `cccmu-windows-amd64.zip`
+          
+          **macOS**  
+          - amd64 (Intel): `cccmu-darwin-amd64.zip`
+          - arm64 (Apple Silicon): `cccmu-darwin-arm64.zip`
+          
+          **Linux**
+          - amd64 (x86_64): `cccmu-linux-amd64.zip`
+          - arm64 (ARM64): `cccmu-linux-arm64.zip`
+          
+          #### 🏃 快速运行
+          ```bash
+          # 下载zip包并解压运行
+          unzip cccmu-linux-amd64.zip
+          chmod +x cccmu-linux-amd64
+          ./cccmu-linux-amd64
+          
+          # 或使用Docker
+          docker run -p 8080:8080 ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+          ```
+          
+          ### ⚡ 版本信息
+          - **版本**: ${{ github.ref_name }}
+          - **提交**: ${GITHUB_SHA:0:8}
+          - **构建时间**: BUILD_TIME_PLACEHOLDER
+          
+          ### 🔒 文件校验
+          每个 zip 包中都包含对应的 SHA256 校验文件，请解压后验证二进制文件完整性：
+          ```bash
+          # 解压zip包
+          unzip cccmu-linux-amd64.zip
+          # 验证文件完整性
+          sha256sum -c cccmu-linux-amd64.sha256
+          ```
+          EOF
+          
+          # 替换构建时间占位符
+          sed -i "s/BUILD_TIME_PLACEHOLDER/${BUILD_TIME}/" release-notes.md
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
