@@ -117,6 +117,38 @@ cccmu/
 
 ### 使用 Docker (推荐)
 
+#### 快速启动（临时使用）
+
+最简单的部署方式，适合快速体验和临时使用：
+
+```bash
+# 拉取最新镜像并运行
+docker run -d --name cccmu -p 8080:8080 ghcr.io/leafney/cccmu:latest
+```
+
+或使用 Docker Compose：
+
+```yaml
+# docker-compose.yml (最简配置)
+services:
+  cccmu:
+    image: ghcr.io/leafney/cccmu:latest
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+```
+
+```bash
+# 启动容器
+docker-compose up -d
+```
+
+> **注意**：以上方式容器删除后数据会丢失，适合临时使用。
+
+#### 数据持久化部署（推荐）
+
+如需保留配置和历史数据，建议使用数据持久化方式：
+
 ```bash
 # 拉取最新镜像
 docker pull ghcr.io/leafney/cccmu:latest
@@ -125,7 +157,7 @@ docker pull ghcr.io/leafney/cccmu:latest
 docker run -d \
   --name cccmu \
   -p 8080:8080 \
-  -v $(pwd)/data:/app/.b \
+  -v $(pwd)/data:/app/data \
   ghcr.io/leafney/cccmu:latest
 
 # 运行容器（使用环境变量配置）
@@ -135,11 +167,9 @@ docker run -d \
   -e PORT=9090 \
   -e LOG_ENABLED=true \
   -e SESSION_EXPIRE=48h \
-  -v $(pwd)/data:/app/.b \
+  -v $(pwd)/data:/app/data \
   ghcr.io/leafney/cccmu:latest
 
-# 或使用 Docker Compose（推荐）
-docker-compose up -d
 ```
 
 **Docker Compose 环境变量配置**：
@@ -154,11 +184,17 @@ services:
       - "8080:8080"
     restart: unless-stopped
     volumes:
-      - ./data:/app/.b
+      # 数据持久化目录映射
+      - ./data:/app/data
     environment:
-      - PORT=8080
+      - PORT=8080                # 内部服务端口默认8080，通过该参数更改
       - LOG_ENABLED=false        # 生产环境建议关闭
       - SESSION_EXPIRE=168h      # 7天过期时间
+```
+
+```bash
+# 启动容器
+docker compose up -d
 ```
 
 访问 http://localhost:8080 开始使用。
@@ -178,8 +214,13 @@ cccmu-windows-amd64.exe
 
 ### 支持的平台
 
-- **Docker**: `linux/amd64`, `linux/arm64`
-- **二进制文件**: Windows (amd64), macOS (amd64, arm64), Linux (amd64, arm64)
+- **Docker 镜像**: 
+  - `linux/amd64` (x86_64)
+  - `linux/arm64` (ARM64)
+- **二进制文件**: 
+  - **Windows**: `amd64` (x86_64)
+  - **macOS**: `amd64` (Intel), `arm64` (Apple Silicon M1/M2)
+  - **Linux**: `amd64` (x86_64), `arm64` (ARM64)
 
 📖 **详细部署指南**: 查看 [DEPLOY.md](DEPLOY.md) 了解完整的部署选项、配置参数和高级用法。
 
@@ -355,24 +396,29 @@ GoVersion: go1.23.1
 
 **Docker 部署时的密钥管理**：
 
-由于密钥文件 `.auth` 是单个文件而非目录，直接通过 Volume 映射会导致容器启动错误（Docker 会将其映射为目录）。推荐使用以下方式管理密钥文件：
+通过数据目录映射，密钥文件在容器重启后保持不变。如需管理访问密钥，可以使用以下命令：
 
 ```bash
-# 查看容器中的访问密钥内容并保存到主机
-docker exec cccmu /bin/sh -c "cat /app/.auth" > .auth
+# 查看容器中的访问密钥
+docker exec cccmu /bin/sh -c "cat /app/data/auth"
 
-# 删除容器中的密钥文件（重启容器后会生成新密钥）
-docker exec -it cccmu /bin/sh -c "rm /app/.auth"
+# 直接查看宿主机上的密钥文件
+cat ./data/auth
 
-# 查看密钥文件是否存在
-docker exec cccmu /bin/sh -c "ls -la /app/.auth"
+# 查看容器启动日志中的密钥信息
+docker logs cccmu | grep "访问密钥"
+
+# 删除密钥文件以重新生成新密钥
+rm ./data/auth
+docker restart cccmu
 ```
 
 **密钥文件说明**：
-- 密钥文件位置：容器内 `/app/.auth`
+- 密钥文件位置：容器内 `/app/data/auth`，宿主机 `./data/auth`
 - 文件格式：纯文本，包含32位随机字符串
 - 生成时机：应用首次启动或密钥文件不存在时自动生成
 - 重新生成：删除密钥文件后重启容器即可生成新密钥
+- 数据持久化：通过 volumes 映射，密钥和数据库在容器重启后保持不变
 
 **安全特性**：
 - 基于 Session 的身份验证机制

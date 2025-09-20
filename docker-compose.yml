@@ -7,9 +7,9 @@ services:
     restart: unless-stopped
     volumes:
       # 数据持久化目录映射
-      - ./data:/app/.b
+      - ./data:/app/data
     environment:
-      # 服务器端口配置
+      # 服务端口配置（内部服务端口默认8080，通过该参数更改）
       - PORT=8080
       # 启用详细日志输出（开发调试时建议启用）
       - LOG_ENABLED=false

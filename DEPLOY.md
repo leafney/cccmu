@@ -8,11 +8,17 @@
 # 拉取最新镜像
 docker pull ghcr.io/leafney/cccmu:latest
 
-# 运行容器
+# 运行容器（快速体验）
 docker run -d \
   --name cccmu \
   -p 8080:8080 \
-  -v $(pwd)/data:/app/.b \
+  ghcr.io/leafney/cccmu:latest
+
+# 运行容器（数据持久化）
+docker run -d \
+  --name cccmu \
+  -p 8080:8080 \
+  -v $(pwd)/data:/app/data \
   ghcr.io/leafney/cccmu:latest
 
 # 访问应用
@@ -40,13 +46,17 @@ cccmu-windows-amd64.exe
 - `linux/arm64` - ARM64 Linux系统 (如树莓派4、Apple Silicon服务器等)
 
 ### 二进制文件
-| 平台 | 架构 | 文件名 |
-|------|------|--------|
-| Windows | x64 | `cccmu-windows-amd64.exe` |
-| macOS | Intel | `cccmu-darwin-amd64` |
-| macOS | Apple Silicon | `cccmu-darwin-arm64` |
-| Linux | x64 | `cccmu-linux-amd64` |
-| Linux | ARM64 | `cccmu-linux-arm64` |
+
+**Windows**
+- amd64 (x86_64): `cccmu-windows-amd64.zip`
+
+**macOS**
+- amd64 (Intel): `cccmu-darwin-amd64.zip`
+- arm64 (Apple Silicon): `cccmu-darwin-arm64.zip`
+
+**Linux**
+- amd64 (x86_64): `cccmu-linux-amd64.zip`
+- arm64 (ARM64): `cccmu-linux-arm64.zip`
 
 ## ⚙️ 配置选项
 
@@ -86,7 +96,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./data:/app/.b
+      - ./data:/app/data
     environment:
       - TZ=Asia/Shanghai
     restart: unless-stopped
@@ -112,7 +122,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./data:/app/.b
+      - ./data:/app/data
     environment:
       - TZ=Asia/Shanghai
     restart: unless-stopped
@@ -130,7 +140,7 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./data:/app/.b
+      - ./data:/app/data
     environment:
       - TZ=Asia/Shanghai
       - PORT=9090  # 使用环境变量设置端口
@@ -151,7 +161,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./prod-data:/app/.b
+      - ./prod-data:/app/data
     environment:
       - TZ=Asia/Shanghai
     restart: unless-stopped
@@ -170,7 +180,7 @@ services:
     ports:
       - "8081:8081"
     volumes:
-      - ./dev-data:/app/.b
+      - ./dev-data:/app/data
     environment:
       - TZ=Asia/Shanghai
     restart: unless-stopped
@@ -188,7 +198,7 @@ mkdir -p ./cccmu-data
 docker run -d \
   --name cccmu \
   -p 8080:8080 \
-  -v $(pwd)/cccmu-data:/app/.b \
+  -v $(pwd)/cccmu-data:/app/data \
   -e TZ=Asia/Shanghai \
   --restart unless-stopped \
   ghcr.io/leafney/cccmu:latest
@@ -197,7 +207,7 @@ docker run -d \
 docker run -d \
   --name cccmu-debug \
   -p 8080:8080 \
-  -v $(pwd)/cccmu-data:/app/.b \
+  -v $(pwd)/cccmu-data:/app/data \
   -e TZ=Asia/Shanghai \
   --restart unless-stopped \
   ghcr.io/leafney/cccmu:latest \
@@ -207,7 +217,7 @@ docker run -d \
 docker run -d \
   --name cccmu-custom \
   -p 9090:9090 \
-  -v $(pwd)/cccmu-data:/app/.b \
+  -v $(pwd)/cccmu-data:/app/data \
   -e TZ=Asia/Shanghai \
   --restart unless-stopped \
   ghcr.io/leafney/cccmu:latest \
@@ -304,7 +314,7 @@ spec:
           value: "Asia/Shanghai"
         volumeMounts:
         - name: data
-          mountPath: /app/.b
+          mountPath: /app/data
         livenessProbe:
           httpGet:
             path: /health
@@ -430,7 +440,7 @@ docker pull ghcr.io/leafney/cccmu:latest
 docker run -d \
   --name cccmu \
   -p 8080:8080 \
-  -v $(pwd)/data:/app/.b \
+  -v $(pwd)/data:/app/data \
   ghcr.io/leafney/cccmu:latest
 ```
 

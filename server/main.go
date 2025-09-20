@@ -119,12 +119,17 @@ func main() {
 		log.Fatalf("解析Session过期时间失败: %v", err)
 	}
 
+	// 确保数据目录存在
+	if err := os.MkdirAll("./data", 0755); err != nil {
+		log.Fatalf("创建数据目录失败: %v", err)
+	}
+
 	// 初始化认证管理器
 	authManager := auth.NewManager(expireDuration)
 	fmt.Printf("⏰ Session过期时间: %s\n", expireDuration)
 
 	// 初始化数据库
-	db, err := database.NewBadgerDB("./.b")
+	db, err := database.NewBadgerDB("./data/.b")
 	if err != nil {
 		log.Fatalf("初始化数据库失败: %v", err)
 	}

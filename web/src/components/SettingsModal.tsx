@@ -1238,9 +1238,14 @@ function StatusInfoTab({
           {config.autoSchedule?.enabled && (
             <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
               <span className="text-sm text-blue-700">自动调度时间</span>
-              <span className="text-sm text-blue-900">
-                {config.autoSchedule.startTime} - {config.autoSchedule.endTime}
-              </span>
+              <div className="text-right">
+                <div className="text-sm text-blue-900">
+                  {config.autoSchedule.startTime} - {config.autoSchedule.endTime}
+                </div>
+                <div className="text-xs text-blue-600 mt-0.5">
+                  范围内{config.autoSchedule.monitoringOn ? '开启' : '关闭'}监控
+                </div>
+              </div>
             </div>
           )}
           

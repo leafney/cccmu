@@ -83,7 +83,7 @@ export function LoginPage() {
                     <div className="font-medium mb-1">如何获取访问密钥？</div>
                     <div className="text-white/70">
                       请在启动 CCCMU 程序的控制台中查看访问密钥。
-                      如果忘记密钥，可以删除 .auth 文件重启程序重新生成。
+                      如果忘记密钥，可以删除 auth 文件重启程序重新生成。
                     </div>
                     {/* 箭头 */}
                     <div className="absolute -top-1 left-4 w-2 h-2 bg-gray-900/95 border-l border-t border-white/20 transform rotate-45"></div>

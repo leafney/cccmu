@@ -49,7 +49,7 @@ type Manager struct {
 func NewManager(expireDuration time.Duration) *Manager {
 	manager := &Manager{
 		expireDuration: expireDuration,
-		authFilePath:   ".auth",
+		authFilePath:   "./data/auth",
 	}
 
 	// 加载或生成认证密钥
