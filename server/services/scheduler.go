@@ -969,6 +969,47 @@ func (s *SchedulerService) StopAuto() error {
 	return nil
 }
 
+// RestartAuto 自动调度强制重启监控（由自动调度服务调用）
+func (s *SchedulerService) RestartAuto() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	log.Printf("[自动调度] ♻️  强制重启监控任务")
+
+	if s.config == nil {
+		return fmt.Errorf("监控配置未加载")
+	}
+
+	if s.config.Cookie == "" {
+		log.Printf("[自动调度] 重启失败: Cookie未设置")
+		return fmt.Errorf("Cookie未设置")
+	}
+
+	if s.scheduler != nil {
+		log.Printf("[自动调度]   ⏹️  停止现有调度器以进行重启")
+		s.scheduler.StopJobs()
+		if err := s.scheduler.Shutdown(); err != nil {
+			log.Printf("[自动调度]   ⚠️  关闭调度器失败: %v", err)
+		}
+	} else {
+		log.Printf("[自动调度]   ⚠️  调度器不存在，直接重建")
+	}
+
+	// 清理状态，确保后续重新创建调度器
+	s.isRunning = false
+	s.scheduler = nil
+	s.balanceJob = nil
+	s.balanceTaskPaused = false
+
+	if err := s.startWithoutLock(); err != nil {
+		log.Printf("[自动调度]   ❌ 重启监控任务失败: %v", err)
+		return err
+	}
+
+	log.Printf("[自动调度]   ✅ 重启监控任务成功")
+	return nil
+}
+
 // IsAutoScheduleEnabled 检查是否启用了自动调度
 func (s *SchedulerService) IsAutoScheduleEnabled() bool {
 	if s.autoScheduler == nil {

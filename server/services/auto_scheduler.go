@@ -537,42 +537,29 @@ func (a *AutoSchedulerService) handleEndTimeTask(config *models.AutoScheduleConf
 	log.Printf("[自动调度]   📊 当前监控状态: %v", currentlyOn)
 	log.Printf("[自动调度]   🎯 目标监控状态: %v", shouldMonitoringOn)
 
-	needsChange := shouldMonitoringOn != currentlyOn || lastRecorded != shouldMonitoringOn
-
-	if needsChange {
-		if lastRecorded != shouldMonitoringOn {
-			log.Printf("[自动调度]   🔁 记录状态为: %v，需与目标状态同步", lastRecorded)
-		}
-		log.Printf("[自动调度]   🔄 需要改变监控状态: %v → %v", currentlyOn, shouldMonitoringOn)
-
-		if shouldMonitoringOn {
-			log.Printf("[自动调度]   ▶️  执行操作: 启动监控")
-			if err := a.schedulerSvc.StartAuto(); err != nil {
-				log.Printf("[自动调度]   ❌ 启动监控失败: %v", err)
-				log.Printf("[自动调度]   ⏳ 保持上次记录状态: %v", lastRecorded)
-			} else {
-				log.Printf("[自动调度]   ✅ 监控已成功启动")
-				a.setLastState(shouldMonitoringOn)
-			}
+	if shouldMonitoringOn {
+		log.Printf("[自动调度]   ♻️  结束时间触发，直接重启动态监控任务")
+		if err := a.schedulerSvc.RestartAuto(); err != nil {
+			log.Printf("[自动调度]   ❌ 重启监控失败: %v", err)
+			log.Printf("[自动调度]   ⏳ 保持上次记录状态: %v", lastRecorded)
 		} else {
-			log.Printf("[自动调度]   ⏹️  执行操作: 停止监控")
-			if err := a.schedulerSvc.StopAuto(); err != nil {
-				log.Printf("[自动调度]   ❌ 停止监控失败: %v", err)
-				log.Printf("[自动调度]   ⏳ 保持上次记录状态: %v", lastRecorded)
-			} else {
-				log.Printf("[自动调度]   ✅ 监控已成功停止")
-				a.setLastState(shouldMonitoringOn)
-			}
+			log.Printf("[自动调度]   ✅ 动态监控任务已重启")
+			a.setLastState(shouldMonitoringOn)
 		}
-
-		log.Printf("[自动调度]   📡 通知前端状态变化...")
-		a.schedulerSvc.NotifyAutoScheduleChange()
-		log.Printf("[自动调度] 🏁 结束时间任务处理完成")
 	} else {
-		log.Printf("[自动调度]   ✨ 监控状态无需改变 (已是期望状态)")
-		a.setLastState(shouldMonitoringOn)
-		log.Printf("[自动调度] 🏁 结束时间任务处理完成")
+		log.Printf("[自动调度]   ⏹️  执行操作: 停止监控")
+		if err := a.schedulerSvc.StopAuto(); err != nil {
+			log.Printf("[自动调度]   ❌ 停止监控失败: %v", err)
+			log.Printf("[自动调度]   ⏳ 保持上次记录状态: %v", lastRecorded)
+		} else {
+			log.Printf("[自动调度]   ✅ 监控已成功停止")
+			a.setLastState(shouldMonitoringOn)
+		}
 	}
+
+	log.Printf("[自动调度]   📡 通知前端状态变化...")
+	a.schedulerSvc.NotifyAutoScheduleChange()
+	log.Printf("[自动调度] 🏁 结束时间任务处理完成")
 }
 
 // rebuildTasks 重建任务（时间配置变化时使用）
