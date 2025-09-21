@@ -32,6 +32,7 @@ help:
 	@echo "  build-frontend - 构建前端生产版本"
 	@echo "  build-backend  - 编译后端二进制文件"
 	@echo "  build          - 完整构建项目"
+	@echo "  linux          - 跨平台编译 Linux amd64 版本"
 	@echo ""
 	@echo "运行相关:"
 	@echo "  run            - 运行应用（默认端口8080）"
@@ -85,6 +86,18 @@ build-backend: build-frontend
 .PHONY: build
 build: build-backend
 	@echo "构建完成: $(BIN_DIR)/$(BINARY_NAME)"
+
+# 跨平台编译 Linux amd64
+.PHONY: linux
+linux: build-frontend
+	@echo "准备embed静态文件..."
+	@rm -rf $(BACKEND_DIR)/web/dist
+	@cp -r $(FRONTEND_DIR)/dist $(BACKEND_DIR)/web/
+	@echo "创建bin目录..."
+	@mkdir -p $(BIN_DIR)
+	@echo "跨平台编译 Linux amd64 版本..."
+	GOOS=linux GOARCH=amd64 go build -ldflags="$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY_NAME)-linux-amd64 $(BACKEND_DIR)/main.go
+	@echo "Linux 版本构建完成: $(BIN_DIR)/$(BINARY_NAME)-linux-amd64"
 
 # 运行相关
 .PHONY: run
