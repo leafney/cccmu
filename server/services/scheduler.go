@@ -1381,6 +1381,12 @@ func (s *SchedulerService) handleDailyUsageConfigChange(oldConfig, newConfig *mo
 	if newEnabled {
 		// 启用每日积分统计任务
 		if !s.dailyUsageTracker.IsActive() {
+			// 确保服务已初始化
+			if err := s.dailyUsageTracker.Initialize(); err != nil {
+				utils.Logf("[配置更新] ❌ 初始化每日积分统计服务失败: %v", err)
+				return
+			}
+			
 			if err := s.dailyUsageTracker.Start(); err != nil {
 				utils.Logf("[配置更新] ❌ 启用每日积分统计任务失败: %v", err)
 			} else {
