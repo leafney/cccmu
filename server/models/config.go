@@ -155,6 +155,7 @@ type UserConfig struct {
 	CookieValidationInterval int                `json:"cookieValidationInterval"` // Cookie验证间隔(分钟)
 	DailyResetUsed           bool               `json:"dailyResetUsed"`           // 当日重置是否已使用
 	DailyUsageEnabled        bool               `json:"dailyUsageEnabled"`        // 是否启用每日积分使用量统计
+	SkipWhenNoConnections    bool               `json:"skipWhenNoConnections"`    // 当无客户端连接时跳过API请求
 	AutoSchedule             AutoScheduleConfig `json:"autoSchedule"`             // 自动调度配置
 	AutoReset                AutoResetConfig    `json:"autoReset"`                // 自动重置配置
 }
@@ -177,6 +178,7 @@ type UserConfigResponse struct {
 	CookieValidationInterval int                `json:"cookieValidationInterval"` // Cookie验证间隔(分钟)
 	DailyResetUsed           bool               `json:"dailyResetUsed"`           // 当日重置是否已使用
 	DailyUsageEnabled        bool               `json:"dailyUsageEnabled"`        // 是否启用每日积分使用量统计
+	SkipWhenNoConnections    bool               `json:"skipWhenNoConnections"`    // 当无客户端连接时跳过API请求
 	AutoSchedule             AutoScheduleConfig `json:"autoSchedule"`             // 自动调度配置
 	AutoReset                AutoResetConfig    `json:"autoReset"`                // 自动重置配置
 	Version                  VersionInfo        `json:"version"`                  // 版本信息
@@ -185,13 +187,14 @@ type UserConfigResponse struct {
 
 // UserConfigRequest API请求用的用户配置结构
 type UserConfigRequest struct {
-	Cookie            *string             `json:"cookie,omitempty"`            // Cookie内容（设置时使用，使用指针类型区分未设置和空字符串）
-	Interval          int                 `json:"interval"`                    // 数据获取间隔(秒)
-	TimeRange         int                 `json:"timeRange"`                   // 显示时间范围(分钟)
-	Enabled           bool                `json:"enabled"`                     // 任务是否启用
-	DailyUsageEnabled *bool               `json:"dailyUsageEnabled,omitempty"` // 是否启用每日积分使用量统计（可选）
-	AutoSchedule      *AutoScheduleConfig `json:"autoSchedule,omitempty"`      // 自动调度配置（可选）
-	AutoReset         *AutoResetConfig    `json:"autoReset,omitempty"`         // 自动重置配置（可选）
+	Cookie                *string             `json:"cookie,omitempty"`                // Cookie内容（设置时使用，使用指针类型区分未设置和空字符串）
+	Interval              int                 `json:"interval"`                        // 数据获取间隔(秒)
+	TimeRange             int                 `json:"timeRange"`                       // 显示时间范围(分钟)
+	Enabled               bool                `json:"enabled"`                         // 任务是否启用
+	DailyUsageEnabled     *bool               `json:"dailyUsageEnabled,omitempty"`     // 是否启用每日积分使用量统计（可选）
+	SkipWhenNoConnections *bool               `json:"skipWhenNoConnections,omitempty"` // 当无客户端连接时跳过API请求（可选）
+	AutoSchedule          *AutoScheduleConfig `json:"autoSchedule,omitempty"`          // 自动调度配置（可选）
+	AutoReset             *AutoResetConfig    `json:"autoReset,omitempty"`             // 自动重置配置（可选）
 }
 
 // GetDefaultConfig 获取默认配置
@@ -205,6 +208,7 @@ func GetDefaultConfig() *UserConfig {
 		CookieValidationInterval: 10,          // 10分钟
 		DailyResetUsed:           false,       // 默认当日未使用
 		DailyUsageEnabled:        false,       // 默认关闭每日积分统计
+		SkipWhenNoConnections:    true,        // 默认启用优化，无连接时跳过API请求
 		AutoSchedule: AutoScheduleConfig{
 			Enabled:      false,
 			StartTime:    "",
@@ -235,6 +239,7 @@ func (c *UserConfig) ToResponse() *UserConfigResponse {
 		CookieValidationInterval: c.CookieValidationInterval,
 		DailyResetUsed:           c.DailyResetUsed,
 		DailyUsageEnabled:        c.DailyUsageEnabled,
+		SkipWhenNoConnections:    c.SkipWhenNoConnections,
 		AutoSchedule:             c.AutoSchedule, // 包含自动调度配置
 		AutoReset:                c.AutoReset,    // 包含自动重置配置
 	}
