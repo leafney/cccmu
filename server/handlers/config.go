@@ -96,9 +96,10 @@ func (h *ConfigHandler) UpdateConfig(c *fiber.Ctx) error {
 		LastCookieValidTime:      currentConfig.LastCookieValidTime,
 		CookieValidationInterval: currentConfig.CookieValidationInterval,
 		DailyResetUsed:           currentConfig.DailyResetUsed,
-		DailyUsageEnabled:        currentConfig.DailyUsageEnabled, // 默认保持原有每日统计配置
-		AutoSchedule:             currentConfig.AutoSchedule,      // 默认保持原有自动调度配置
-		AutoReset:                currentConfig.AutoReset,         // 默认保持原有自动重置配置
+		DailyUsageEnabled:        currentConfig.DailyUsageEnabled,     // 默认保持原有每日统计配置
+		SkipWhenNoConnections:    currentConfig.SkipWhenNoConnections, // 默认保持原有连接优化配置
+		AutoSchedule:             currentConfig.AutoSchedule,          // 默认保持原有自动调度配置
+		AutoReset:                currentConfig.AutoReset,             // 默认保持原有自动重置配置
 	}
 
 	// 如果请求中包含新的Cookie，则更新（使用指针判断是否设置了Cookie字段）
@@ -110,8 +111,16 @@ func (h *ConfigHandler) UpdateConfig(c *fiber.Ctx) error {
 	if requestConfig.DailyUsageEnabled != nil {
 		oldDailyUsageEnabled := currentConfig.DailyUsageEnabled
 		newConfig.DailyUsageEnabled = *requestConfig.DailyUsageEnabled
-		
+
 		log.Printf("[配置更新] 每日积分统计配置变更: %v -> %v", oldDailyUsageEnabled, newConfig.DailyUsageEnabled)
+	}
+
+	// 如果请求中包含连接优化配置，则更新
+	if requestConfig.SkipWhenNoConnections != nil {
+		oldSkipWhenNoConnections := currentConfig.SkipWhenNoConnections
+		newConfig.SkipWhenNoConnections = *requestConfig.SkipWhenNoConnections
+
+		log.Printf("[配置更新] 无连接时跳过API请求配置变更: %v -> %v", oldSkipWhenNoConnections, newConfig.SkipWhenNoConnections)
 	}
 
 	// 如果请求中包含自动调度配置，则更新

@@ -207,10 +207,10 @@ func (d *DailyUsageTracker) collectHourlyUsage() error {
 	oneHourAgo := time.Now().UTC().Add(-time.Hour)
 	var hourlyCredits int
 	var recordCount int
-	var allDataOldest, allDataNewest time.Time       // 所有数据的时间范围
-	var filteredOldest, filteredNewest time.Time     // 符合条件数据的时间范围
-	var filteredTimeInitialized bool                 // 符合条件数据时间范围是否已初始化
-	modelCredits := make(map[string]int)             // 按模型分组的积分统计
+	var allDataOldest, allDataNewest time.Time   // 所有数据的时间范围
+	var filteredOldest, filteredNewest time.Time // 符合条件数据的时间范围
+	var filteredTimeInitialized bool             // 符合条件数据时间范围是否已初始化
+	modelCredits := make(map[string]int)         // 按模型分组的积分统计
 
 	utils.Logf("[每日积分统计] 🔍 分析时间范围: %s 至 %s",
 		oneHourAgo.In(time.Local).Format("15:04:05"), time.Now().Format("15:04:05"))
@@ -248,14 +248,13 @@ func (d *DailyUsageTracker) collectHourlyUsage() error {
 
 			hourlyCredits += data.CreditsUsed
 			recordCount++
-			
+
 			// 按模型统计积分
 			if data.Model != "" && data.CreditsUsed > 0 {
 				modelCredits[data.Model] += data.CreditsUsed
 			}
 		}
 	}
-
 
 	if totalRecords > 0 {
 		if recordCount > 0 {

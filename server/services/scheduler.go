@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -36,6 +37,12 @@ type SchedulerService struct {
 	balanceTaskPaused     bool                       // 积分余额任务暂停状态
 	autoResetService      *AutoResetService          // 自动重置服务引用
 	dailyUsageTracker     *DailyUsageTracker         // 每日积分统计跟踪服务
+	// 连接计数器相关字段
+	activeConnections int   // 活跃连接总数（监听器数量）
+	sseClientCount    int   // SSE客户端数量
+	skippedTaskCount  int64 // 跳过的任务计数
+	// 任务状态跟踪字段
+	lastTasksSkipped bool // 上次监控任务是否被跳过（数据获取+积分余额）
 }
 
 // NewSchedulerService 创建新的调度服务
@@ -286,6 +293,32 @@ func (s *SchedulerService) IsRunning() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.isRunning
+}
+
+// GetActiveConnectionCount 获取当前活跃连接数量
+func (s *SchedulerService) GetActiveConnectionCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.activeConnections
+}
+
+// shouldSkipTaskWhenNoConnections 检查是否应该在无连接时跳过任务
+func (s *SchedulerService) shouldSkipTaskWhenNoConnections() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// 如果配置为不跳过，则不跳过
+	if s.config != nil && !s.config.SkipWhenNoConnections {
+		return false
+	}
+
+	// 如果有活跃连接，则不跳过
+	if s.activeConnections > 0 {
+		return false
+	}
+
+	// 无连接且配置允许跳过，则跳过
+	return true
 }
 
 // needsTaskRestart 检查配置更新是否需要重启定时任务（内部方法）
@@ -681,8 +714,37 @@ func (s *SchedulerService) resetDailyFlags() error {
 	return nil
 }
 
+// checkAndHandleTaskResume 检查并处理任务恢复逻辑
+func (s *SchedulerService) checkAndHandleTaskResume() bool {
+	s.mu.Lock()
+	wasSkipped := s.lastTasksSkipped
+	s.lastTasksSkipped = false
+	// 恢复任务时重置跳过计数器
+	if wasSkipped {
+		s.skippedTaskCount = 0
+	}
+	s.mu.Unlock()
+	return wasSkipped
+}
+
 // fetchAndSaveData 获取并保存数据
 func (s *SchedulerService) fetchAndSaveData() error {
+	// 检查是否应该跳过任务（无连接时优化）
+	if s.shouldSkipTaskWhenNoConnections() {
+		s.mu.Lock()
+		s.skippedTaskCount++
+		s.lastTasksSkipped = true
+		s.mu.Unlock()
+		utils.Logf("[任务优化] 🚫 无活跃连接，跳过使用数据获取任务 (已跳过: %d次)", s.skippedTaskCount)
+		return nil
+	}
+
+	// 检查是否从跳过状态恢复到正常执行
+	wasSkipped := s.checkAndHandleTaskResume()
+	if wasSkipped {
+		utils.Logf("[任务恢复] 🔄 检测到活跃连接，恢复使用数据获取任务 (当前SSE客户端数: %d)", s.GetSSEClientCount())
+	}
+
 	data, err := s.apiClient.FetchUsageData()
 	if err != nil {
 		log.Printf("获取数据失败: %v", err)
@@ -697,12 +759,29 @@ func (s *SchedulerService) fetchAndSaveData() error {
 	s.mu.Unlock()
 
 	s.notifyListeners(data)
+	utils.Logf("[任务执行] ✅ 成功获取使用数据，当前SSE客户端数: %d", s.GetSSEClientCount())
 
 	return nil
 }
 
 // fetchAndSaveBalance 获取并保存积分余额
 func (s *SchedulerService) fetchAndSaveBalance() error {
+	// 检查是否应该跳过任务（无连接时优化）
+	if s.shouldSkipTaskWhenNoConnections() {
+		s.mu.Lock()
+		s.skippedTaskCount++
+		s.lastTasksSkipped = true
+		s.mu.Unlock()
+		utils.Logf("[任务优化] 🚫 无活跃连接，跳过积分余额获取任务 (已跳过: %d次)", s.skippedTaskCount)
+		return nil
+	}
+
+	// 检查是否从跳过状态恢复到正常执行
+	wasSkipped := s.checkAndHandleTaskResume()
+	if wasSkipped {
+		utils.Logf("[任务恢复] 🔄 检测到活跃连接，恢复积分余额获取任务 (当前SSE客户端数: %d)", s.GetSSEClientCount())
+	}
+
 	balance, err := s.apiClient.FetchCreditBalance()
 	if err != nil {
 		log.Printf("获取积分余额失败: %v", err)
@@ -723,6 +802,7 @@ func (s *SchedulerService) fetchAndSaveBalance() error {
 	s.mu.Unlock()
 
 	s.notifyBalanceListeners(balance)
+	utils.Logf("[任务执行] ✅ 成功获取积分余额，当前SSE客户端数: %d", s.GetSSEClientCount())
 
 	return nil
 }
@@ -755,48 +835,94 @@ func (s *SchedulerService) GetLatestBalance() *models.CreditBalance {
 	return s.lastBalance
 }
 
-// AddDataListener 添加数据监听器
-func (s *SchedulerService) AddDataListener() chan []models.UsageData {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// GetSSEClientCount 获取SSE客户端数量
+func (s *SchedulerService) GetSSEClientCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.sseClientCount
+}
 
+// generateClientID 生成随机客户端ID
+func (s *SchedulerService) generateClientID() string {
+	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, 8)
+	for i := range b {
+		b[i] = charset[rand.Intn(len(charset))]
+	}
+	return string(b)
+}
+
+// AddDataListener 添加数据监听器
+func (s *SchedulerService) AddDataListener() (chan []models.UsageData, string) {
+	s.mu.Lock()
+	
 	listener := make(chan []models.UsageData, 10)
 	s.listeners = append(s.listeners, listener)
-	return listener
+	s.activeConnections++
+	
+	// 检测是否是首个客户端连接
+	wasZeroClients := s.sseClientCount == 0
+	s.sseClientCount++
+	
+	// 生成客户端ID
+	clientID := s.generateClientID()
+	
+	utils.Logf("[连接管理] ➕ 新SSE客户端连接，当前客户端数: %d", s.sseClientCount)
+	
+	s.mu.Unlock()
+	
+	// 如果是首个客户端连接，立即触发数据获取
+	if wasZeroClients {
+		go func() {
+			s.fetchAndSaveData()
+			s.fetchAndSaveBalance()
+		}()
+	}
+	
+	return listener, clientID
 }
 
 // AddBalanceListener 添加积分余额监听器
-func (s *SchedulerService) AddBalanceListener() chan *models.CreditBalance {
+func (s *SchedulerService) AddBalanceListener(clientID string) chan *models.CreditBalance {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	listener := make(chan *models.CreditBalance, 10)
 	s.balanceListeners = append(s.balanceListeners, listener)
+	s.activeConnections++
+
+	utils.Logf("[连接管理] ➕ 添加积分余额监听器，SSE ClientID [%s]", clientID)
 	return listener
 }
 
 // AddErrorListener 添加错误监听器
-func (s *SchedulerService) AddErrorListener() chan string {
+func (s *SchedulerService) AddErrorListener(clientID string) chan string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	listener := make(chan string, 10)
 	s.errorListeners = append(s.errorListeners, listener)
+	s.activeConnections++
+
+	utils.Logf("[连接管理] ➕ 添加错误监听器，SSE ClientID [%s]", clientID)
 	return listener
 }
 
 // AddResetStatusListener 添加重置状态监听器
-func (s *SchedulerService) AddResetStatusListener() chan bool {
+func (s *SchedulerService) AddResetStatusListener(clientID string) chan bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	listener := make(chan bool, 10)
 	s.resetStatusListeners = append(s.resetStatusListeners, listener)
+	s.activeConnections++
+
+	utils.Logf("[连接管理] ➕ 添加重置状态监听器，SSE ClientID [%s]", clientID)
 	return listener
 }
 
 // RemoveDataListener 移除数据监听器
-func (s *SchedulerService) RemoveDataListener(listener chan []models.UsageData) {
+func (s *SchedulerService) RemoveDataListener(listener chan []models.UsageData, clientID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -804,13 +930,16 @@ func (s *SchedulerService) RemoveDataListener(listener chan []models.UsageData) 
 		if l == listener {
 			close(l)
 			s.listeners = append(s.listeners[:i], s.listeners[i+1:]...)
+			s.activeConnections--
+			s.sseClientCount--
+			utils.Logf("[连接管理] ➖ SSE客户端断开，当前客户端数: %d", s.sseClientCount)
 			break
 		}
 	}
 }
 
 // RemoveBalanceListener 移除积分余额监听器
-func (s *SchedulerService) RemoveBalanceListener(listener chan *models.CreditBalance) {
+func (s *SchedulerService) RemoveBalanceListener(listener chan *models.CreditBalance, clientID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -818,13 +947,15 @@ func (s *SchedulerService) RemoveBalanceListener(listener chan *models.CreditBal
 		if l == listener {
 			close(l)
 			s.balanceListeners = append(s.balanceListeners[:i], s.balanceListeners[i+1:]...)
+			s.activeConnections--
+			utils.Logf("[连接管理] ➖ 移除积分余额监听器，SSE ClientID [%s]", clientID)
 			break
 		}
 	}
 }
 
 // RemoveErrorListener 移除错误监听器
-func (s *SchedulerService) RemoveErrorListener(listener chan string) {
+func (s *SchedulerService) RemoveErrorListener(listener chan string, clientID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -832,13 +963,15 @@ func (s *SchedulerService) RemoveErrorListener(listener chan string) {
 		if l == listener {
 			close(l)
 			s.errorListeners = append(s.errorListeners[:i], s.errorListeners[i+1:]...)
+			s.activeConnections--
+			utils.Logf("[连接管理] ➖ 移除错误监听器，SSE ClientID [%s]", clientID)
 			break
 		}
 	}
 }
 
 // RemoveResetStatusListener 移除重置状态监听器
-func (s *SchedulerService) RemoveResetStatusListener(listener chan bool) {
+func (s *SchedulerService) RemoveResetStatusListener(listener chan bool, clientID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -846,6 +979,8 @@ func (s *SchedulerService) RemoveResetStatusListener(listener chan bool) {
 		if l == listener {
 			close(l)
 			s.resetStatusListeners = append(s.resetStatusListeners[:i], s.resetStatusListeners[i+1:]...)
+			s.activeConnections--
+			utils.Logf("[连接管理] ➖ 移除重置状态监听器，SSE ClientID [%s]", clientID)
 			break
 		}
 	}
@@ -1040,17 +1175,20 @@ func (s *SchedulerService) GetAutoScheduleConfig() *models.AutoScheduleConfig {
 }
 
 // AddAutoScheduleListener 添加自动调度状态监听器
-func (s *SchedulerService) AddAutoScheduleListener() chan bool {
+func (s *SchedulerService) AddAutoScheduleListener(clientID string) chan bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	listener := make(chan bool, 10)
 	s.autoScheduleListeners = append(s.autoScheduleListeners, listener)
+	s.activeConnections++
+
+	utils.Logf("[连接管理] ➕ 添加自动调度监听器，SSE ClientID [%s]", clientID)
 	return listener
 }
 
 // RemoveAutoScheduleListener 移除自动调度状态监听器
-func (s *SchedulerService) RemoveAutoScheduleListener(listener chan bool) {
+func (s *SchedulerService) RemoveAutoScheduleListener(listener chan bool, clientID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1058,6 +1196,8 @@ func (s *SchedulerService) RemoveAutoScheduleListener(listener chan bool) {
 		if l == listener {
 			close(l)
 			s.autoScheduleListeners = append(s.autoScheduleListeners[:i], s.autoScheduleListeners[i+1:]...)
+			s.activeConnections--
+			utils.Logf("[连接管理] ➖ 移除自动调度监听器，SSE ClientID [%s]", clientID)
 			break
 		}
 	}
@@ -1386,7 +1526,7 @@ func (s *SchedulerService) handleDailyUsageConfigChange(oldConfig, newConfig *mo
 				utils.Logf("[配置更新] ❌ 初始化每日积分统计服务失败: %v", err)
 				return
 			}
-			
+
 			if err := s.dailyUsageTracker.Start(); err != nil {
 				utils.Logf("[配置更新] ❌ 启用每日积分统计任务失败: %v", err)
 			} else {
@@ -1436,18 +1576,39 @@ func (s *SchedulerService) GetConfig() *models.UserConfig {
 	return s.config
 }
 
+// GetOptimizationStats 获取优化统计信息
+func (s *SchedulerService) GetOptimizationStats() map[string]interface{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	skipEnabled := false
+	if s.config != nil {
+		skipEnabled = s.config.SkipWhenNoConnections
+	}
+
+	return map[string]interface{}{
+		"activeConnections":     s.activeConnections,
+		"skippedTaskCount":      s.skippedTaskCount,
+		"skipWhenNoConnections": skipEnabled,
+		"optimizationEnabled":   skipEnabled && s.activeConnections == 0,
+	}
+}
+
 // AddDailyUsageListener 添加每日积分统计监听器
-func (s *SchedulerService) AddDailyUsageListener() chan []models.DailyUsage {
+func (s *SchedulerService) AddDailyUsageListener(clientID string) chan []models.DailyUsage {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	listener := make(chan []models.DailyUsage, 10)
 	s.dailyUsageListeners = append(s.dailyUsageListeners, listener)
+	s.activeConnections++
+
+	utils.Logf("[连接管理] ➕ 添加每日使用监听器，SSE ClientID [%s]", clientID)
 	return listener
 }
 
 // RemoveDailyUsageListener 移除每日积分统计监听器
-func (s *SchedulerService) RemoveDailyUsageListener(listener chan []models.DailyUsage) {
+func (s *SchedulerService) RemoveDailyUsageListener(listener chan []models.DailyUsage, clientID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1455,6 +1616,8 @@ func (s *SchedulerService) RemoveDailyUsageListener(listener chan []models.Daily
 		if l == listener {
 			close(l)
 			s.dailyUsageListeners = append(s.dailyUsageListeners[:i], s.dailyUsageListeners[i+1:]...)
+			s.activeConnections--
+			utils.Logf("[连接管理] ➖ 移除每日使用监听器，SSE ClientID [%s]", clientID)
 			break
 		}
 	}
