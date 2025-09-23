@@ -130,19 +130,19 @@ func (h *SSEHandler) StreamUsageData(c *fiber.Ctx) error {
 		}
 
 		// 添加数据监听器
-		listener := h.scheduler.AddDataListener()
-		balanceListener := h.scheduler.AddBalanceListener()
-		errorListener := h.scheduler.AddErrorListener()
-		resetStatusListener := h.scheduler.AddResetStatusListener()
-		autoScheduleListener := h.scheduler.AddAutoScheduleListener()
-		dailyUsageListener := h.scheduler.AddDailyUsageListener()
+		listener, clientID := h.scheduler.AddDataListener()
+		balanceListener := h.scheduler.AddBalanceListener(clientID)
+		errorListener := h.scheduler.AddErrorListener(clientID)
+		resetStatusListener := h.scheduler.AddResetStatusListener(clientID)
+		autoScheduleListener := h.scheduler.AddAutoScheduleListener(clientID)
+		dailyUsageListener := h.scheduler.AddDailyUsageListener(clientID)
 		defer func() {
-			h.scheduler.RemoveDataListener(listener)
-			h.scheduler.RemoveBalanceListener(balanceListener)
-			h.scheduler.RemoveErrorListener(errorListener)
-			h.scheduler.RemoveResetStatusListener(resetStatusListener)
-			h.scheduler.RemoveAutoScheduleListener(autoScheduleListener)
-			h.scheduler.RemoveDailyUsageListener(dailyUsageListener)
+			h.scheduler.RemoveDataListener(listener, clientID)
+			h.scheduler.RemoveBalanceListener(balanceListener, clientID)
+			h.scheduler.RemoveErrorListener(errorListener, clientID)
+			h.scheduler.RemoveResetStatusListener(resetStatusListener, clientID)
+			h.scheduler.RemoveAutoScheduleListener(autoScheduleListener, clientID)
+			h.scheduler.RemoveDailyUsageListener(dailyUsageListener, clientID)
 		}()
 
 		// 设置连接保活
