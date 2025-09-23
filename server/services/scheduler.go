@@ -712,6 +712,19 @@ func (s *SchedulerService) resetDailyFlags() error {
 	return nil
 }
 
+// checkAndHandleTaskResume 检查并处理任务恢复逻辑
+func (s *SchedulerService) checkAndHandleTaskResume() bool {
+	s.mu.Lock()
+	wasSkipped := s.lastTasksSkipped
+	s.lastTasksSkipped = false
+	// 恢复任务时重置跳过计数器
+	if wasSkipped {
+		s.skippedTaskCount = 0
+	}
+	s.mu.Unlock()
+	return wasSkipped
+}
+
 // fetchAndSaveData 获取并保存数据
 func (s *SchedulerService) fetchAndSaveData() error {
 	// 检查是否应该跳过任务（无连接时优化）
@@ -725,11 +738,7 @@ func (s *SchedulerService) fetchAndSaveData() error {
 	}
 
 	// 检查是否从跳过状态恢复到正常执行
-	s.mu.Lock()
-	wasSkipped := s.lastTasksSkipped
-	s.lastTasksSkipped = false
-	s.mu.Unlock()
-
+	wasSkipped := s.checkAndHandleTaskResume()
 	if wasSkipped {
 		utils.Logf("[任务恢复] 🔄 检测到活跃连接，恢复使用数据获取任务 (当前连接数: %d)", s.GetActiveConnectionCount())
 	}
@@ -766,11 +775,7 @@ func (s *SchedulerService) fetchAndSaveBalance() error {
 	}
 
 	// 检查是否从跳过状态恢复到正常执行
-	s.mu.Lock()
-	wasSkipped := s.lastTasksSkipped
-	s.lastTasksSkipped = false
-	s.mu.Unlock()
-
+	wasSkipped := s.checkAndHandleTaskResume()
 	if wasSkipped {
 		utils.Logf("[任务恢复] 🔄 检测到活跃连接，恢复积分余额获取任务 (当前连接数: %d)", s.GetActiveConnectionCount())
 	}
