@@ -13,6 +13,7 @@ import (
 	"github.com/leafney/cccmu/server/database"
 	"github.com/leafney/cccmu/server/models"
 	"github.com/leafney/cccmu/server/utils"
+	"github.com/leafney/cccmu/server/vars"
 )
 
 // AutoResetService 自动重置服务
@@ -652,7 +653,7 @@ func (s *AutoResetService) executeAutoReset(trigger string) {
 		// 如果是阈值触发，延迟获取最新积分确认重置效果
 		if trigger == "threshold_trigger" {
 			go func() {
-				time.Sleep(10 * time.Second)
+				time.Sleep(vars.CacheExpireDuration)
 				utils.Logf("[阈值触发] 🔄 重置后验证积分余额...")
 				if balance, err := s.apiClient.FetchCreditBalance(); err == nil {
 					utils.Logf("[阈值触发] ✅ 重置后积分余额: %d", balance.Remaining)

@@ -6,13 +6,7 @@ import (
 
 	"github.com/leafney/cccmu/server/models"
 	"github.com/leafney/cccmu/server/utils"
-)
-
-const (
-	// CacheExpireDuration 缓存有效期（25秒）
-	CacheExpireDuration = 25 * time.Second
-	// CleanupInterval 缓存清理间隔（30秒）
-	CleanupInterval = 30 * time.Second
+	"github.com/leafney/cccmu/server/vars"
 )
 
 // CacheEntry 缓存条目结构
@@ -40,7 +34,7 @@ func NewAPICache() *APICache {
 
 // startCleanup 启动缓存清理机制
 func (cache *APICache) startCleanup() {
-	cache.cleanupTicker = time.NewTicker(CleanupInterval)
+	cache.cleanupTicker = time.NewTicker(vars.CleanupInterval)
 	go func() {
 		for range cache.cleanupTicker.C {
 			cache.cleanup()
@@ -55,12 +49,12 @@ func (cache *APICache) cleanup() {
 	defer cache.mu.Unlock()
 
 	// 清理 usage 缓存
-	if cache.usageCache != nil && now.Sub(cache.usageCache.Timestamp) > CacheExpireDuration {
+	if cache.usageCache != nil && now.Sub(cache.usageCache.Timestamp) > vars.CacheExpireDuration {
 		cache.usageCache = nil
 	}
 
 	// 清理 balance 缓存
-	if cache.balanceCache != nil && now.Sub(cache.balanceCache.Timestamp) > CacheExpireDuration {
+	if cache.balanceCache != nil && now.Sub(cache.balanceCache.Timestamp) > vars.CacheExpireDuration {
 		cache.balanceCache = nil
 	}
 }
@@ -86,7 +80,7 @@ func (cache *APICache) GetCachedUsageData() ([]models.UsageData, error, bool) {
 	defer cache.usageCache.Mutex.RUnlock()
 
 	// 检查缓存是否过期
-	if time.Since(cache.usageCache.Timestamp) > CacheExpireDuration {
+	if time.Since(cache.usageCache.Timestamp) > vars.CacheExpireDuration {
 		utils.Logf("缓存未命中: FetchUsageData - 缓存过期 (过期时间: %.1f秒)", time.Since(cache.usageCache.Timestamp).Seconds())
 		return nil, nil, false
 	}
@@ -139,7 +133,7 @@ func (cache *APICache) GetCachedBalance() (*models.CreditBalance, error, bool) {
 	defer cache.balanceCache.Mutex.RUnlock()
 
 	// 检查缓存是否过期
-	if time.Since(cache.balanceCache.Timestamp) > CacheExpireDuration {
+	if time.Since(cache.balanceCache.Timestamp) > vars.CacheExpireDuration {
 		utils.Logf("缓存未命中: FetchCreditBalance - 缓存过期 (过期时间: %.1f秒)", time.Since(cache.balanceCache.Timestamp).Seconds())
 		return nil, nil, false
 	}
