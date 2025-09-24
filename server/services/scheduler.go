@@ -1462,8 +1462,23 @@ func (s *SchedulerService) rebuildScheduler() error {
 	// 停止并关闭现有调度器
 	if s.scheduler != nil {
 		s.scheduler.StopJobs()
-		if err := s.scheduler.Shutdown(); err != nil {
-			utils.Logf("[任务协调] ⚠️  关闭旧调度器失败: %v", err)
+
+		// 设置超时时间，避免长时间等待
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		done := make(chan error, 1)
+		go func() {
+			done <- s.scheduler.Shutdown()
+		}()
+
+		select {
+		case err := <-done:
+			if err != nil {
+				utils.Logf("[任务协调] ⚠️  关闭旧调度器失败: %v", err)
+			}
+		case <-ctx.Done():
+			utils.Logf("[任务协调] ⚠️  关闭旧调度器超时，强制继续")
 		}
 	}
 

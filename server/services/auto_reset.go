@@ -617,9 +617,14 @@ func (s *AutoResetService) removeThresholdCheckTask() {
 		s.thresholdTimerJob = nil
 	}
 
-	// 恢复SchedulerService积分获取任务（采用重建策略）
-	utils.Logf("[阈值触发] ▶️  恢复SchedulerService积分获取任务 (阈值检查已结束)")
-	s.schedulerSvc.RebuildBalanceTask()
+	// 恢复SchedulerService积分获取任务前，检查是否在监控开启范围内
+	shouldResumeTask := s.shouldResumeSchedulerTask()
+	if shouldResumeTask {
+		utils.Logf("[阈值触发] ▶️  恢复SchedulerService积分获取任务 (阈值检查已结束)")
+		s.schedulerSvc.RebuildBalanceTask()
+	} else {
+		utils.Logf("[阈值触发] ⏸️  当前在监控关闭时间范围内，跳过任务恢复")
+	}
 
 	s.thresholdActive = false
 	utils.Logf("[阈值触发] ⏹️  阈值检查任务已停用")
@@ -767,5 +772,41 @@ func (s *AutoResetService) stopTasks() {
 		log.Printf("[自动重置] ✅ 自动重置停止完成")
 	} else {
 		log.Printf("[自动重置]   ⚠️  任务未在运行，无需停止")
+	}
+}
+
+// shouldResumeSchedulerTask 检查是否应该恢复调度器任务
+// 需要检查当前时间是否在自动调度的监控开启范围内
+func (s *AutoResetService) shouldResumeSchedulerTask() bool {
+	// 获取当前配置
+	config, err := s.db.GetConfig()
+	if err != nil {
+		utils.Logf("[阈值触发] ❌ 获取配置失败，默认恢复任务: %v", err)
+		return true // 配置获取失败时默认恢复
+	}
+
+	// 检查自动调度是否启用
+	autoScheduleConfig := &config.AutoSchedule
+	if !autoScheduleConfig.Enabled {
+		utils.Logf("[阈值触发] ✅ 自动调度未启用，恢复任务")
+		return true // 未启用自动调度时正常恢复
+	}
+
+	now := time.Now()
+	inTimeRange := autoScheduleConfig.IsInTimeRange(now)
+	shouldMonitoringBeOn := autoScheduleConfig.ShouldMonitoringBeOn(now)
+
+	utils.Logf("[阈值触发] 🕐 检查监控时间范围状态")
+	utils.Logf("[阈值触发]   ⏰ 当前时间: %s", now.Format("15:04:05"))
+	utils.Logf("[阈值触发]   📅 时间范围: %s-%s", autoScheduleConfig.StartTime, autoScheduleConfig.EndTime)
+	utils.Logf("[阈值触发]   📍 在范围内: %v", inTimeRange)
+	utils.Logf("[阈值触发]   🎯 应启动监控: %v", shouldMonitoringBeOn)
+
+	if shouldMonitoringBeOn {
+		utils.Logf("[阈值触发] ✅ 当前时间在监控开启范围内，可以恢复任务")
+		return true
+	} else {
+		utils.Logf("[阈值触发] ❌ 当前时间在监控关闭范围内，不恢复任务")
+		return false
 	}
 }
