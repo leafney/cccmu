@@ -157,6 +157,15 @@ func (s *AutoResetService) Start() error {
 	if s.config.Enabled {
 		log.Printf("[自动重置] 启动时自动重置已启用，开始初始化")
 		s.startTasks(s.config)
+
+		// 检查并启动阈值触发任务
+		if s.config.ThresholdEnabled {
+			log.Printf("[自动重置] 启动时检测到阈值触发已启用，启动阈值检查任务")
+			if err := s.startThresholdTask(); err != nil {
+				log.Printf("[自动重置] 启动阈值触发任务失败: %v", err)
+				// 不返回错误，让其他功能继续工作
+			}
+		}
 	} else {
 		log.Printf("[自动重置] 启动时自动重置未启用")
 	}
