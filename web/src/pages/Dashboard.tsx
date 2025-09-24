@@ -148,17 +148,28 @@ export function Dashboard() {
         const configResponse = await apiClient.getConfig();
         if (configResponse.data) {
           const loadedConfig = configResponse.data;
-          
+
           // 应用互控逻辑：如果自动调度已启用，确保监控开关也启用
           const adjustedConfig = {
             ...loadedConfig,
             enabled: loadedConfig.autoSchedule.enabled ? true : loadedConfig.enabled
           };
-          
+
           setConfig(adjustedConfig);
-          
+
           // 初始化自动重置开关状态
           setIsAutoResetEnabled(adjustedConfig.autoReset?.enabled || false);
+
+          // 根据配置初始化监控状态，避免等待SSE连接建立才显示正确的禁用状态
+          if (adjustedConfig.autoSchedule.enabled) {
+            setMonitoringStatus({
+              type: 'monitoring_status',
+              isMonitoring: false, // 初始值，会被SSE更新
+              autoScheduleEnabled: true,
+              autoScheduleActive: false, // 初始值，会被SSE更新
+              timestamp: new Date().toISOString()
+            });
+          }
         }
 
         // 加载任务运行状态
@@ -201,10 +212,28 @@ export function Dashboard() {
   // 处理配置更新
   const handleConfigUpdate = async (newConfig: IUserConfig) => {
     setConfig(newConfig);
-    
+
     // 同步自动重置开关状态
     setIsAutoResetEnabled(newConfig.autoReset?.enabled || false);
-    
+
+    // 根据新配置更新监控状态，确保开关状态正确
+    if (newConfig.autoSchedule.enabled) {
+      setMonitoringStatus(prev => ({
+        type: 'monitoring_status',
+        isMonitoring: prev?.isMonitoring ?? false, // 保持原有监控状态或使用默认值
+        autoScheduleEnabled: true,
+        autoScheduleActive: prev?.autoScheduleActive ?? false, // 保持原有活跃状态或使用默认值
+        timestamp: new Date().toISOString()
+      }));
+    } else {
+      // 自动调度关闭时，清除监控状态约束
+      setMonitoringStatus(prev => prev ? {
+        ...prev,
+        autoScheduleEnabled: false,
+        timestamp: new Date().toISOString()
+      } : null);
+    }
+
     // 检查实际的任务运行状态，确保状态同步
     try {
       const statusResponse = await fetch('/api/control/status');
