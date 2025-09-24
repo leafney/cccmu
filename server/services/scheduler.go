@@ -855,22 +855,22 @@ func (s *SchedulerService) generateClientID() string {
 // AddDataListener 添加数据监听器
 func (s *SchedulerService) AddDataListener() (chan []models.UsageData, string) {
 	s.mu.Lock()
-	
+
 	listener := make(chan []models.UsageData, 10)
 	s.listeners = append(s.listeners, listener)
 	s.activeConnections++
-	
+
 	// 检测是否是首个客户端连接
 	wasZeroClients := s.sseClientCount == 0
 	s.sseClientCount++
-	
+
 	// 生成客户端ID
 	clientID := s.generateClientID()
-	
+
 	utils.Logf("[连接管理] ➕ 新SSE客户端连接，当前客户端数: %d", s.sseClientCount)
-	
+
 	s.mu.Unlock()
-	
+
 	// 如果是首个客户端连接，立即触发数据获取
 	if wasZeroClients {
 		go func() {
@@ -878,7 +878,7 @@ func (s *SchedulerService) AddDataListener() (chan []models.UsageData, string) {
 			s.fetchAndSaveBalance()
 		}()
 	}
-	
+
 	return listener, clientID
 }
 
