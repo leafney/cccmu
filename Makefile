@@ -8,7 +8,7 @@ BUILD_DIR=dist
 BIN_DIR=bin
 
 # 版本信息
-VERSION ?= $(shell git describe --tags --exact-match 2>/dev/null || echo "dev")
+VERSION ?= $(shell git describe --tags --exact-match 2>/dev/null || git branch --show-current 2>/dev/null || echo "dev")
 GIT_COMMIT := $(shell git rev-parse --short HEAD)
 BUILD_TIME := $(shell date '+%Y-%m-%d %H:%M:%S')
 

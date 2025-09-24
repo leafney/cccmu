@@ -33,9 +33,9 @@ COPY server/ ./server/
 COPY --from=frontend-builder /app/web/dist ./server/web/dist
 
 # Build arguments for version information
-ARG VERSION=dev
-ARG GIT_COMMIT=unknown
-ARG BUILD_TIME=unknown
+ARG VERSION
+ARG GIT_COMMIT
+ARG BUILD_TIME
 
 # Build backend with embedded frontend
 RUN CGO_ENABLED=0 GOOS=linux go build \
