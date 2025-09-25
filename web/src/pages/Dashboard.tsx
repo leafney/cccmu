@@ -97,23 +97,11 @@ export function Dashboard() {
         }, 5000);
       },
       () => {
-        // SSE连接成功时设置连接状态并同步任务状态
+        // SSE连接成功时设置连接状态
+        // 不再主动查询状态，等待SSE推送的 monitoring_status 事件来统一设置状态
         setIsConnected(true);
-        
-        // 连接成功后检查后端任务状态，确保UI状态同步
-        const syncTaskStatus = async () => {
-          try {
-            const statusResponse = await fetch('/api/control/status');
-            const statusResult = await statusResponse.json();
-            if (statusResult.data) {
-              setIsMonitoring(statusResult.data.running);
-            }
-          } catch (error) {
-            console.error('同步任务状态失败:', error);
-          }
-        };
-        
-        syncTaskStatus();
+
+        console.debug('SSE连接建立成功，等待服务端推送监控状态信息');
       },
       (resetUsed: boolean) => {
         // 处理重置状态更新
@@ -121,10 +109,18 @@ export function Dashboard() {
         setConfig(prev => prev ? { ...prev, dailyResetUsed: resetUsed } : prev);
       },
       (status: IMonitoringStatus) => {
-        // 处理监控状态更新
+        // 处理监控状态更新 - 这是状态的权威数据源
         console.debug('收到监控状态更新:', status);
+
+        // 无条件接受并应用SSE推送的监控状态
         setMonitoringStatus(status);
         setIsMonitoring(status.isMonitoring);
+
+        console.debug('已应用监控状态:', {
+          isMonitoring: status.isMonitoring,
+          autoScheduleEnabled: status.autoScheduleEnabled,
+          autoScheduleActive: status.autoScheduleActive
+        });
       },
       handleAuthExpired, // 认证过期处理
       (dailyUsage: IDailyUsage[]) => {
@@ -149,34 +145,34 @@ export function Dashboard() {
         if (configResponse.data) {
           const loadedConfig = configResponse.data;
 
-          // 应用互控逻辑：如果自动调度已启用，确保监控开关也启用
-          const adjustedConfig = {
-            ...loadedConfig,
-            enabled: loadedConfig.autoSchedule.enabled ? true : loadedConfig.enabled
-          };
-
-          setConfig(adjustedConfig);
+          // 直接使用后端配置，不做任何调整
+          setConfig(loadedConfig);
 
           // 初始化自动重置开关状态
-          setIsAutoResetEnabled(adjustedConfig.autoReset?.enabled || false);
+          setIsAutoResetEnabled(loadedConfig.autoReset?.enabled || false);
 
-          // 根据配置初始化监控状态，避免等待SSE连接建立才显示正确的禁用状态
-          if (adjustedConfig.autoSchedule.enabled) {
+          // 如果启用了自动调度，预设置监控状态框架，但不设置具体的状态值
+          // 具体状态值将由SSE连接建立后的监控状态事件来设置
+          if (loadedConfig.autoSchedule.enabled) {
             setMonitoringStatus({
               type: 'monitoring_status',
-              isMonitoring: false, // 初始值，会被SSE更新
+              isMonitoring: false, // 占位值，等待SSE更新
               autoScheduleEnabled: true,
-              autoScheduleActive: false, // 初始值，会被SSE更新
+              autoScheduleActive: false, // 占位值，等待SSE更新
               timestamp: new Date().toISOString()
             });
           }
         }
 
-        // 加载任务运行状态
+        // 加载任务运行状态，仅用于初始化参考，不直接设置监控状态
+        // 监控状态将由SSE连接建立后的 monitoring_status 事件统一设置
         const statusResponse = await fetch('/api/control/status');
         const statusResult = await statusResponse.json();
         if (statusResult.data) {
+          // 初始化时设置真实的监控状态，不管是否有自动调度
+          // SSE连接建立后会推送最新状态，确保状态同步
           setIsMonitoring(statusResult.data.running);
+          console.debug('初始化监控状态:', statusResult.data.running);
         }
 
         // 初始化时不立即获取数据，等待SSE连接建立后再获取
@@ -234,19 +230,9 @@ export function Dashboard() {
       } : null);
     }
 
-    // 检查实际的任务运行状态，确保状态同步
-    try {
-      const statusResponse = await fetch('/api/control/status');
-      const statusResult = await statusResponse.json();
-      if (statusResult.data) {
-        setIsMonitoring(statusResult.data.running);
-      } else {
-        setIsMonitoring(newConfig.enabled);
-      }
-    } catch (error) {
-      console.error('检查任务状态失败:', error);
-      setIsMonitoring(newConfig.enabled);
-    }
+    // 不再主动查询任务状态，状态由SSE的 monitoring_status 事件统一管理
+    // 配置更新后，后端会通过SSE推送最新的监控状态信息
+    console.debug('配置已更新，等待后端推送最新的监控状态信息');
   };
 
   // 移除未使用的triggerDataLoad函数，现在只通过后端Start方法自动触发
@@ -358,7 +344,7 @@ export function Dashboard() {
           throw startError;
         }
       }
-    } catch (error) {
+    } catch (toggleError) {
       // 最终错误处理：重新加载实际状态
       try {
         const statusResponse = await fetch('/api/control/status');
@@ -369,6 +355,7 @@ export function Dashboard() {
       } catch (statusError) {
         console.error('重新加载状态失败:', statusError);
       }
+      console.error('监控开关操作失败:', toggleError);
     }
   };
 
