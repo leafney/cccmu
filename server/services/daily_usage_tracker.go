@@ -207,31 +207,48 @@ func (d *DailyUsageTracker) collectHourlyUsage() error {
 	oneHourAgo := time.Now().UTC().Add(-time.Hour)
 	var hourlyCredits int
 	var recordCount int
-	var oldestRecord, newestRecord time.Time
-	modelCredits := make(map[string]int) // 按模型分组的积分统计
+	var allDataOldest, allDataNewest time.Time   // 所有数据的时间范围
+	var filteredOldest, filteredNewest time.Time // 符合条件数据的时间范围
+	var filteredTimeInitialized bool             // 符合条件数据时间范围是否已初始化
+	modelCredits := make(map[string]int)         // 按模型分组的积分统计
 
 	utils.Logf("[每日积分统计] 🔍 分析时间范围: %s 至 %s",
 		oneHourAgo.In(time.Local).Format("15:04:05"), time.Now().Format("15:04:05"))
 
+	// 初始化所有数据的时间范围（使用第一条数据）
+	if len(usageData) > 0 {
+		allDataOldest = usageData[0].CreatedAt
+		allDataNewest = usageData[0].CreatedAt
+	}
+
 	for _, data := range usageData {
-		if recordCount == 0 {
-			lastData := usageData[len(usageData)-1]
-			oldestRecord = lastData.CreatedAt
-			newestRecord = lastData.CreatedAt
-		} else {
-			if data.CreatedAt.Before(oldestRecord) {
-				oldestRecord = data.CreatedAt
-			}
-			if data.CreatedAt.After(newestRecord) {
-				newestRecord = data.CreatedAt
-			}
+		// 更新所有数据的时间范围
+		if data.CreatedAt.Before(allDataOldest) {
+			allDataOldest = data.CreatedAt
+		}
+		if data.CreatedAt.After(allDataNewest) {
+			allDataNewest = data.CreatedAt
 		}
 
 		// 将UTC时间与UTC时间比较
 		if data.CreatedAt.After(oneHourAgo) {
+			// 初始化或更新符合条件数据的时间范围
+			if !filteredTimeInitialized {
+				filteredOldest = data.CreatedAt
+				filteredNewest = data.CreatedAt
+				filteredTimeInitialized = true
+			} else {
+				if data.CreatedAt.Before(filteredOldest) {
+					filteredOldest = data.CreatedAt
+				}
+				if data.CreatedAt.After(filteredNewest) {
+					filteredNewest = data.CreatedAt
+				}
+			}
+
 			hourlyCredits += data.CreditsUsed
 			recordCount++
-			
+
 			// 按模型统计积分
 			if data.Model != "" && data.CreditsUsed > 0 {
 				modelCredits[data.Model] += data.CreditsUsed
@@ -240,8 +257,13 @@ func (d *DailyUsageTracker) collectHourlyUsage() error {
 	}
 
 	if totalRecords > 0 {
-		utils.Logf("[每日积分统计] 📅 数据时间范围: %s 至 %s",
-			oldestRecord.In(time.Local).Format("15:04:05"), newestRecord.In(time.Local).Format("15:04:05"))
+		if recordCount > 0 {
+			utils.Logf("[每日积分统计] 📅 数据时间范围: %s 至 %s",
+				filteredOldest.In(time.Local).Format("15:04:05"), filteredNewest.In(time.Local).Format("15:04:05"))
+		} else {
+			utils.Logf("[每日积分统计] 📅 数据时间范围: %s 至 %s",
+				allDataOldest.In(time.Local).Format("15:04:05"), allDataNewest.In(time.Local).Format("15:04:05"))
+		}
 	}
 
 	utils.Logf("[每日积分统计] 📊 过滤结果: %d/%d 条记录在统计时间范围内", recordCount, totalRecords)

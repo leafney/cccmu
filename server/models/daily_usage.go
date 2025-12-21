@@ -40,12 +40,12 @@ func IsToday(date string) bool {
 func GetWeekDates() []string {
 	dates := make([]string, 7)
 	now := time.Now().Local()
-	
+
 	for i := 0; i < 7; i++ {
 		date := now.AddDate(0, 0, -6+i)
 		dates[i] = date.Format("2006-01-02")
 	}
-	
+
 	return dates
 }
 
@@ -86,7 +86,7 @@ func (d DailyUsageList) SortByDate() DailyUsageList {
 	// 简单的冒泡排序
 	sorted := make(DailyUsageList, len(d))
 	copy(sorted, d)
-	
+
 	for i := 0; i < len(sorted)-1; i++ {
 		for j := 0; j < len(sorted)-1-i; j++ {
 			if sorted[j].Date > sorted[j+1].Date {
@@ -94,7 +94,7 @@ func (d DailyUsageList) SortByDate() DailyUsageList {
 			}
 		}
 	}
-	
+
 	return sorted
 }
 
@@ -111,7 +111,7 @@ func (d DailyUsageList) ToMap() map[string]DailyUsage {
 func (d DailyUsageList) FillMissingDates() DailyUsageList {
 	weekDates := GetWeekDates()
 	usageMap := d.ToMap()
-	
+
 	result := make(DailyUsageList, len(weekDates))
 	for i, date := range weekDates {
 		if usage, exists := usageMap[date]; exists {
@@ -125,7 +125,7 @@ func (d DailyUsageList) FillMissingDates() DailyUsageList {
 			}
 		}
 	}
-	
+
 	return result
 }
 
@@ -134,7 +134,7 @@ func (d *DailyUsage) GetModelList() []string {
 	if d.ModelCredits == nil {
 		return []string{}
 	}
-	
+
 	models := make([]string, 0, len(d.ModelCredits))
 	for model := range d.ModelCredits {
 		if d.ModelCredits[model] > 0 {
@@ -164,7 +164,7 @@ func (d *DailyUsage) AddModelCredits(model string, credits int) {
 // GetAllModelList 获取所有天数中使用过的模型列表（用于前端图表）
 func (d DailyUsageList) GetAllModelList() []string {
 	modelSet := make(map[string]bool)
-	
+
 	for _, usage := range d {
 		if usage.ModelCredits != nil {
 			for model := range usage.ModelCredits {
@@ -174,7 +174,7 @@ func (d DailyUsageList) GetAllModelList() []string {
 			}
 		}
 	}
-	
+
 	models := make([]string, 0, len(modelSet))
 	for model := range modelSet {
 		models = append(models, model)
